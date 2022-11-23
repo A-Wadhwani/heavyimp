@@ -3,13 +3,21 @@ use std::collections::HashMap;
 use crate::error::{EvalError::*, EvalResult};
 use crate::syntax::{Constant::*, *};
 
-enum Value {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Value {
     Number(i64),
     Location(usize),
 }
 
 type Sigma = HashMap<Ident, Value>;
-type Heap = Vec<Constant>;
+type Heap = Vec<i64>;
+
+pub fn eval_program(program: &Statement) -> EvalResult<(Sigma, Heap)> {
+    let mut store = HashMap::new();
+    let mut heap = Vec::new();
+    eval_stmnt(program, &mut store, &mut heap);
+    Ok((store, heap))
+}
 
 fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
     match expr {
@@ -20,11 +28,9 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
         }),
         // Get the location from the store, and read from the heap
         Expr::HeapRead(x) => {
-            let index = *store.get(x).ok_or(UnboundVariable).and_then(|v| match v {
-                Value::Number(_) => Err(TypeMismatch),
-                Value::Location(l) => Ok(l),
-            })?;
-            heap.get(index).ok_or(InvalidDereference).cloned()
+            let index = store.get(x).ok_or(UnboundVariable).and_then(get_loc)?;
+            let value = heap.get(index).ok_or(InvalidDereference)?;
+            Ok(Constant::Nat(*value))
         }
         // Return the constant
         Expr::Constant(c) => Ok(c.clone()),
@@ -76,18 +82,15 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             }
         }
         Statement::HeapNew(id, expr) => {
-            let value = eval_expr(expr, store, heap)?;
+            let value = eval_expr(expr, store, heap).and_then(get_nat)?;
             let index = heap.len();
             heap.push(value);
             store.insert(id.clone(), Value::Location(index));
             Ok(())
         }
         Statement::HeapUpdate(id, expr) => {
-            let value = eval_expr(expr, store, heap)?;
-            let index = *store.get(id).ok_or(UnboundVariable).and_then(|v| match v {
-                Value::Number(_) => Err(TypeMismatch),
-                Value::Location(l) => Ok(l),
-            })?;
+            let value = eval_expr(expr, store, heap).and_then(get_nat)?;
+            let index = store.get(id).ok_or(UnboundVariable).and_then(get_loc)?;
             // Check if the index is in the heap, and if it is, update it
             heap.get_mut(index)
                 .ok_or(InvalidDereference)
@@ -95,13 +98,7 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
         }
         // Get the location from the store, and add the alias to the store
         Statement::HeapAlias(alias, id) => {
-            let index = *store
-                .get(id)
-                .ok_or(UnboundVariable)
-                .and_then(|v| match v {
-                    Value::Number(_) => Err(TypeMismatch),
-                    Value::Location(l) => Ok(l),
-                })?;
+            let index = store.get(id).ok_or(UnboundVariable).and_then(get_loc)?;
             store.insert(alias.clone(), Value::Location(index));
             Ok(())
         }
@@ -129,5 +126,69 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             }
         }
         Statement::Skip => Ok(()),
+    }
+}
+
+fn get_nat(c: Constant) -> EvalResult<i64> {
+    match c {
+        Nat(i) => Ok(i),
+        _ => Err(TypeMismatch),
+    }
+}
+
+fn get_loc(v: &Value) -> EvalResult<usize> {
+    match v {
+        Value::Number(_) => Err(TypeMismatch),
+        Value::Location(l) => Ok(*l),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_multiple_stores() {
+        let program = Statement::Sequence(
+            Box::new(Statement::StoreAssign("x".into(), Expr::Constant(Nat(1)))),
+            Box::new(Statement::StoreAssign("y".into(), Expr::Constant(Nat(2)))),
+        );
+        let (store, heap) = eval_program(&program).unwrap();
+        assert_eq!(store.get("x"), Some(&Value::Number(1)));
+        assert_eq!(store.get("y"), Some(&Value::Number(2)));
+        assert_eq!(heap.len(), 0);
+    }
+
+    #[test]
+    fn test_heap_and_store() {
+        let program = Statement::Sequence(
+            Box::new(Statement::StoreAssign("x".into(), Expr::Constant(Nat(1)))),
+            Box::new(Statement::HeapNew("y".into(), Expr::Constant(Nat(2)))),
+        );
+        let (store, heap) = eval_program(&program).unwrap();
+        assert_eq!(store.get("x"), Some(&Value::Number(1)));
+        assert_eq!(store.get("y"), Some(&Value::Location(0)));
+        assert_eq!(heap.len(), 1);
+        assert_eq!(heap[0], 2);
+    }
+
+    #[test]
+    fn test_heap_assigns() {
+        let program = Statement::Sequence(
+            Box::new(Statement::StoreAssign("x".into(), Expr::Constant(Nat(1)))),
+            Box::new(Statement::Sequence(
+                Box::new(Statement::HeapNew("y".into(), Expr::StoreRead("x".into()))),
+                Box::new(Statement::Sequence(
+                    Box::new(Statement::HeapAlias("z".into(), "y".into())),
+                    Box::new(Statement::HeapUpdate("z".into(), Expr::Constant(Nat(3)))),
+                )),
+            )),
+        );
+        let (store, heap) = eval_program(&program).unwrap();
+        assert_eq!(store.get("x"), Some(&Value::Number(1)));
+        assert_eq!(store.get("y"), Some(&Value::Location(0)));
+        assert_eq!(store.get("z"), Some(&Value::Location(0)));
+        assert_eq!(heap.len(), 1);
+        assert_eq!(heap[0], 3);
     }
 }
