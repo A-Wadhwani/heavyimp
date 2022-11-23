@@ -88,15 +88,16 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
                 .ok_or(InvalidDereference)
                 .map(|c| *c = value)
         }
-        Statement::HeapAlias(new_id, curr_id) => {
+        // Get the location from the store, and add the alias to the store
+        Statement::HeapAlias(alias, id) => {
             let index = *store
-                .get(curr_id)
+                .get(id)
                 .ok_or(UnboundVariable)
                 .and_then(|v| match v {
                     Value::Constant(_) => Err(TypeMismatch),
                     Value::Location(l) => Ok(l),
                 })?;
-            store.insert(new_id.clone(), Value::Location(index));
+            store.insert(alias.clone(), Value::Location(index));
             Ok(())
         }
         Statement::Sequence(s1, s2) => {
