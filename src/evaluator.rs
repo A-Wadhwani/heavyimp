@@ -191,4 +191,75 @@ mod tests {
         assert_eq!(heap.len(), 1);
         assert_eq!(heap[0], 3);
     }
+
+    #[test]
+    fn test_heap_dereference() {
+        let program = Statement::Sequence(
+            Box::new(Statement::StoreAssign("x".into(), Expr::Constant(Nat(1)))),
+            Box::new(Statement::Sequence(
+                Box::new(Statement::Sequence(
+                    Box::new(Statement::HeapNew("z".into(), Expr::Constant(Nat(2)))),
+                    Box::new(Statement::HeapUpdate(
+                        "z".into(),
+                        Expr::NatAdd(
+                            Box::new(Expr::StoreRead("x".into())),
+                            Box::new(Expr::HeapRead("z".into())),
+                        ),
+                    )),
+                )),
+                Box::new(Statement::HeapNew(
+                    "y".into(),
+                    Expr::HeapRead("z".into()),
+                )),
+            )),
+        );
+        let (store, heap) = eval_program(&program).unwrap();
+        assert_eq!(store.get("x"), Some(&Value::Number(1)));
+        assert_eq!(store.get("y"), Some(&Value::Location(1)));
+        assert_eq!(store.get("z"), Some(&Value::Location(0)));
+        assert_eq!(heap.len(), 2);
+        assert_eq!(heap[0], 3);
+        assert_eq!(heap[1], 3);
+    }
+
+    #[test]
+    fn test_conditional_heap() {
+        let program = Statement::Sequence(
+            Box::new(Statement::HeapNew("x".into(), Expr::Constant(Nat(1)))),
+            Box::new(Statement::Sequence(
+                Box::new(Statement::Sequence(
+                    Box::new(Statement::HeapNew("z".into(), Expr::Constant(Nat(2)))),
+                    Box::new(Statement::HeapUpdate(
+                        "z".into(),
+                        Expr::NatAdd(
+                            Box::new(Expr::HeapRead("x".into())),
+                            Box::new(Expr::HeapRead("z".into())),
+                        ),
+                    )),
+                )),
+                Box::new(Statement::Conditional(
+                    Expr::NatLeq(
+                        Box::new(Expr::HeapRead("x".into())),
+                        Box::new(Expr::Constant(Nat(0))),
+                    ),
+                    Box::new(Statement::HeapNew(
+                        "y".into(),
+                        Expr::HeapRead("z".into()),
+                    )),
+                    Box::new(Statement::HeapNew(
+                        "y".into(),
+                        Expr::Constant(Nat(4)),
+                    )),
+                )),
+            )),
+        );
+        let (store, heap) = eval_program(&program).unwrap();
+        assert_eq!(store.get("x"), Some(&Value::Location(0)));
+        assert_eq!(store.get("y"), Some(&Value::Location(2)));
+        assert_eq!(store.get("z"), Some(&Value::Location(1)));
+        assert_eq!(heap.len(), 3);
+        assert_eq!(heap[0], 1);
+        assert_eq!(heap[1], 3);
+        assert_eq!(heap[2], 4);
+    }
 }
