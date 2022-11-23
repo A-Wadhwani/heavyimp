@@ -4,7 +4,7 @@ use crate::error::{EvalError::*, EvalResult};
 use crate::syntax::{Constant::*, *};
 
 enum Value {
-    Constant(Constant),
+    Number(i64),
     Location(usize),
 }
 
@@ -15,13 +15,13 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
     match expr {
         // Read from the store, and return if it's a constant
         Expr::StoreRead(x) => store.get(x).ok_or(UnboundVariable).and_then(|v| match v {
-            Value::Constant(c) => Ok(c.clone()),
+            Value::Number(i) => Ok(Nat(*i)),
             Value::Location(_) => Err(TypeMismatch),
         }),
         // Get the location from the store, and read from the heap
         Expr::HeapRead(x) => {
             let index = *store.get(x).ok_or(UnboundVariable).and_then(|v| match v {
-                Value::Constant(_) => Err(TypeMismatch),
+                Value::Number(_) => Err(TypeMismatch),
                 Value::Location(l) => Ok(l),
             })?;
             heap.get(index).ok_or(InvalidDereference).cloned()
@@ -67,8 +67,13 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
     match stmnt {
         Statement::StoreAssign(id, expr) => {
             let value = eval_expr(expr, store, heap)?;
-            store.insert(id.clone(), Value::Constant(value));
-            Ok(())
+            match value {
+                Nat(i) => {
+                    store.insert(id.clone(), Value::Number(i));
+                    Ok(())
+                }
+                _ => Err(TypeMismatch),
+            }
         }
         Statement::HeapNew(id, expr) => {
             let value = eval_expr(expr, store, heap)?;
@@ -80,7 +85,7 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
         Statement::HeapUpdate(id, expr) => {
             let value = eval_expr(expr, store, heap)?;
             let index = *store.get(id).ok_or(UnboundVariable).and_then(|v| match v {
-                Value::Constant(_) => Err(TypeMismatch),
+                Value::Number(_) => Err(TypeMismatch),
                 Value::Location(l) => Ok(l),
             })?;
             // Check if the index is in the heap, and if it is, update it
@@ -94,7 +99,7 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
                 .get(id)
                 .ok_or(UnboundVariable)
                 .and_then(|v| match v {
-                    Value::Constant(_) => Err(TypeMismatch),
+                    Value::Number(_) => Err(TypeMismatch),
                     Value::Location(l) => Ok(l),
                 })?;
             store.insert(alias.clone(), Value::Location(index));
