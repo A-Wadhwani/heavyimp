@@ -15,7 +15,7 @@ type Heap = Vec<i64>;
 pub fn eval_program(program: &Statement) -> EvalResult<(Sigma, Heap)> {
     let mut store = HashMap::new();
     let mut heap = Vec::new();
-    eval_stmnt(program, &mut store, &mut heap);
+    eval_stmnt(program, &mut store, &mut heap)?;
     Ok((store, heap))
 }
 

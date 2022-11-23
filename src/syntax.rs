@@ -6,6 +6,7 @@ pub enum Constant {
     Bool(bool),
 }
 
+#[derive(Debug, Clone)]
 pub enum Expr {
     StoreRead(Ident),
     HeapRead(Ident),
@@ -16,6 +17,7 @@ pub enum Expr {
     BoolNot(Box<Expr>),
 }
 
+#[derive(Debug, Clone)]
 pub enum Statement {
     StoreAssign(Ident, Expr),
     HeapNew(Ident, Expr),
