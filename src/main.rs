@@ -1,8 +1,8 @@
-use check::quick_check_evaluator;
+use check_eval::quick_check_evaluator;
 use syntax::Statement;
 
 #[allow(unused)]
-mod check;
+mod check_eval;
 pub mod error;
 pub mod evaluator;
 pub mod syntax;

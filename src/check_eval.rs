@@ -32,8 +32,8 @@ impl Arbitrary for Constant {
 impl Arbitrary for Expr {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         match u8::arbitrary(g) % 10 {
-            0 => Expr::StoreRead(random_reference(g, "")),
-            1 => Expr::HeapRead(random_reference(g, "")),
+            0 => random_reference(g, "").map_or(Self::arbitrary(g), Expr::StoreRead),
+            1 => random_reference(g, "h").map_or(Self::arbitrary(g), Expr::HeapRead),
             2..=5 => Expr::Constant(Constant::arbitrary(g)),
             6 => Expr::NatAdd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
             7 => Expr::NatLeq(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
@@ -101,28 +101,23 @@ impl Arbitrary for Statement {
         match u8::arbitrary(g) % 100 + 1 {
             1..=15 => Statement::StoreAssign(arbitrary_ident(g), Expr::arbitrary(g)),
             16..=30 => Statement::HeapNew(arbitrary_ident(g), Expr::arbitrary(g)),
-            31..=35 => {
-                if contains_names() {
-                    Statement::HeapUpdate(random_reference(g, ""), Expr::arbitrary(g))
-                } else {
-                    Statement::Skip
-                }
-            }
+            31..=35 => random_reference(g, "").map_or(Statement::Skip, |name| {
+                Statement::HeapUpdate(name, Expr::arbitrary(g))
+            }),
             36..=40 => {
                 let alias = arbitrary_ident(g);
-                let name = random_reference(g, alias.as_str());
-                Statement::HeapAlias(alias, name)
+                random_reference(g, alias.as_str())
+                    .map_or(Statement::Skip, |name| Statement::HeapAlias(alias, name))
             }
-            41..=60 => {
+            41..=65 => {
                 Statement::Sequence(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g)))
             }
-            61..=80 => Statement::Conditional(
+            66..=90 => Statement::Conditional(
                 Expr::arbitrary(g),
                 Box::new(Self::arbitrary(g)),
                 Box::new(Self::arbitrary(g)),
             ),
-            81..=90 => Statement::While(Expr::arbitrary(g), Box::new(Self::arbitrary(g))),
-            91..=100 => Statement::Skip,
+            91..=100 => Statement::While(Expr::arbitrary(g), Box::new(Self::arbitrary(g))),
             _ => unreachable!(),
         }
     }
@@ -207,17 +202,18 @@ fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
     s
 }
 
-fn random_reference(g: &mut quickcheck::Gen, name: &str) -> String {
-    g.choose(
-        &NAMES
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|n| n != &name)
-            .collect::<Vec<_>>(),
+fn random_reference(g: &mut quickcheck::Gen, name: &str) -> Option<String> {
+    Some(
+        g.choose(
+            &NAMES
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|n| n != &name)
+                .collect::<Vec<_>>(),
+        )?
+        .to_string(),
     )
-    .unwrap()
-    .to_string()
 }
 
 fn contains_names() -> bool {
@@ -228,7 +224,9 @@ pub fn quick_check_evaluator(stmnt: Statement) -> bool {
     let val = evaluator::eval_program(&stmnt).is_ok();
     NAMES.lock().unwrap().clear();
     if (val) {
-        println!("Passed on {:?}!\n", stmnt);
+        println!("Passed on {:?}\n", stmnt);
+    } else {
+        println!("Failed on {:?}\n", stmnt);
     }
     val
 }
