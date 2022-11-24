@@ -1,7 +1,6 @@
 use std::{collections::HashSet, sync::Mutex};
 
 use crate::{
-    error::EvalError,
     evaluator,
     syntax::{Constant, Constant::*, Expr, Statement},
 };
@@ -32,14 +31,14 @@ impl Arbitrary for Constant {
 
 impl Arbitrary for Expr {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        match u8::arbitrary(g) % 10 {
+        match u8::arbitrary(g) % 20 {
             0 => random_reference(g, "").map_or(Self::arbitrary(g), Self::StoreRead),
             1 => random_reference(g, "").map_or(Self::arbitrary(g), Self::HeapRead),
-            2..=5 => Self::Constant(Constant::arbitrary(g)),
-            6 => Self::NatAdd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            7 => Self::NatLeq(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            8 => Self::BoolAnd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            9 => Self::BoolNot(Box::new(Self::arbitrary(g))),
+            2..=10 => Self::Constant(Constant::arbitrary(g)),
+            11..=13 => Self::NatAdd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
+            14..=15 => Self::NatLeq(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
+            16..=17 => Self::BoolAnd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
+            18..=20 => Self::BoolNot(Box::new(Self::arbitrary(g))),
             _ => unreachable!(),
         }
     }
@@ -185,8 +184,8 @@ impl Statement {
             },
             36..=45 => {
                 let alias = arbitrary_ident(g);
-                match random_reference(g, "") {
-                    Some(r) => Self::HeapAlias(alias, r),
+                match random_reference(g, alias.as_str()) {
+                    Some(r) => Self::HeapAlias(r, alias),
                     None => Self::generate_stmnts(g),
                 }
             }
@@ -225,14 +224,14 @@ fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
     let mut s = String::new();
     // Occasionally use a random reference
 
-    let mut i = u8::arbitrary(g) % 10 + 4;
+    let mut i = u8::arbitrary(g) % 5 + 4;
     while i > 0 {
         // Just letters
         s.push(char::from(b'a' + u8::arbitrary(g) % 26));
         i -= 1;
     }
     NAMES.lock().unwrap().insert(s.clone());
-    if bool::arbitrary(g) {
+    if u8::arbitrary(g) % 10 <= 2 {
         random_reference(g, "").unwrap_or(s)
     } else {
         s
@@ -254,20 +253,21 @@ fn random_reference(g: &mut quickcheck::Gen, name: &str) -> Option<String> {
 }
 
 pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
-    // Check if it passes the type-checker here
     if false {
         println!("Discarding Test: {:?}\n", stmnt);
-        // This test can be ignored if it does
+        // This test can be ignored if it does not type check
         return TestResult::discard();
     }
     NAMES.lock().unwrap().clear();
     let val = evaluator::eval_program(&stmnt);
     if val.is_ok() {
+        // TODO: Successful programs aren't very common, the generator should be improved to
+        // find more "proper" programs, after the type checker is implemented
         println!("Passed on {:?}\n", stmnt);
         TestResult::passed()
     } else {
         let err = val.unwrap_err();
-        println!("{:?} error on {:?}\n", err, stmnt);
+        // println!("{:?} error on {:?}\n", err, stmnt);
         TestResult::failed()
     }
 }
