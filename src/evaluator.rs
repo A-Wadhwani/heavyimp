@@ -115,14 +115,21 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             }
         }
         Statement::While(expr, loop_s) => {
-            let value = eval_expr(expr, store, heap)?;
-            match value {
-                Bool(true) => {
-                    eval_stmnt(loop_s, store, heap)?;
-                    eval_stmnt(stmnt, store, heap)
+            let mut value = eval_expr(expr, store, heap)?;
+            let mut count = 0;
+            while let Bool(true) = value {
+                if count > 1000 {
+                    // We don't want to loop forever, automatically break here
+                    return Ok(())
                 }
-                Bool(false) => Ok(()),
-                _ => Err(TypeMismatch),
+                eval_stmnt(loop_s, store, heap)?;
+                value = eval_expr(expr, store, heap)?;
+                count += 1;
+            }
+            if matches!(value, Bool(_)) {
+                Ok(())
+            } else {
+                Err(TypeMismatch)
             }
         }
         Statement::Skip => Ok(()),

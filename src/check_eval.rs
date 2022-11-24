@@ -4,7 +4,7 @@ use crate::{
     evaluator,
     syntax::{Constant, Constant::*, Expr, Statement},
 };
-use quickcheck::{empty_shrinker, Arbitrary};
+use quickcheck::{empty_shrinker, Arbitrary, TestResult};
 
 lazy_static! {
     static ref NAMES: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
@@ -33,7 +33,7 @@ impl Arbitrary for Expr {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         match u8::arbitrary(g) % 10 {
             0 => random_reference(g, "").map_or(Self::arbitrary(g), Expr::StoreRead),
-            1 => random_reference(g, "h").map_or(Self::arbitrary(g), Expr::HeapRead),
+            1 => random_reference(g, "").map_or(Self::arbitrary(g), Expr::HeapRead),
             2..=5 => Expr::Constant(Constant::arbitrary(g)),
             6 => Expr::NatAdd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
             7 => Expr::NatLeq(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
@@ -192,7 +192,7 @@ impl Arbitrary for Statement {
 // A cleaner to read string
 fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
     let mut s = String::new();
-    let mut i = u8::arbitrary(g) % 10;
+    let mut i = u8::arbitrary(g) % 10 + 4;
     while i > 0 {
         // Just letters
         s.push(char::from(b'a' + u8::arbitrary(g) % 26));
@@ -220,13 +220,20 @@ fn contains_names() -> bool {
     !NAMES.lock().unwrap().is_empty()
 }
 
-pub fn quick_check_evaluator(stmnt: Statement) -> bool {
-    let val = evaluator::eval_program(&stmnt).is_ok();
-    NAMES.lock().unwrap().clear();
-    if (val) {
-        println!("Passed on {:?}\n", stmnt);
-    } else {
-        println!("Failed on {:?}\n", stmnt);
+pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
+    // Check if it passes the type-checker here
+    if false {
+        println!("Discarding Test: {:?}\n", stmnt);
+        // This test can be ignored if it does
+        return TestResult::discard();
     }
-    val
+    NAMES.lock().unwrap().clear();
+    let val = evaluator::eval_program(&stmnt);
+    if val.is_ok() {
+        println!("Passed on {:?}\n", stmnt);
+        TestResult::passed()
+    } else {
+        println!("{:?} error on {:?}\n", val.unwrap_err(), stmnt);
+        TestResult::failed()
+    }
 }

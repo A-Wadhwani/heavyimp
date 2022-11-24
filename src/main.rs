@@ -1,4 +1,5 @@
 use check_eval::quick_check_evaluator;
+use quickcheck::TestResult;
 use syntax::Statement;
 
 #[allow(unused)]
@@ -11,5 +12,6 @@ pub mod syntax;
 extern crate lazy_static;
 
 fn main() {
-    quickcheck::quickcheck(quick_check_evaluator as fn(Statement) -> bool);
+    // Check if the evaluator does not throw an error, given that the type-checker passes
+    quickcheck::quickcheck(quick_check_evaluator as fn(Statement) -> TestResult);
 }
