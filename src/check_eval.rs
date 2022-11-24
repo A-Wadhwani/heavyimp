@@ -1,8 +1,9 @@
-use std::{collections::HashSet, sync::Mutex};
+use std::{collections::HashSet, sync::Mutex, any::type_name};
 
 use crate::{
-    evaluator,
+    evaluator::{self, eval_program},
     syntax::{Constant, Constant::*, Expr, Statement},
+    typechecker::typecheck,
 };
 use quickcheck::{empty_shrinker, Arbitrary, TestResult};
 
@@ -252,23 +253,19 @@ fn random_reference(g: &mut quickcheck::Gen, name: &str) -> Option<String> {
     )
 }
 
-pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
-    if false {
-                // This test can be ignored if it does not type check
+pub fn quick_check(stmnt: Statement) -> TestResult {
+    let typecheck = typecheck(&stmnt);
+    let evaluated = eval_program(&stmnt);
 
-        println!("Discarding Test: {:?}\n", stmnt);
-        return TestResult::discard();
-    }
-    NAMES.lock().unwrap().clear();
-    let val = evaluator::eval_program(&stmnt);
-    if val.is_ok() {
-        // TODO: Successful programs aren't very common, the generator should be improved to
-        // find more "proper" programs, after the type checker is implemented
+    if typecheck.is_err() == evaluated.is_err() {
         println!("Passed on {:?}\n", stmnt);
         TestResult::passed()
     } else {
-        let err = val.unwrap_err();
-        println!("{:?} error on {:?}\n", err, stmnt);
+        if typecheck.is_err() {
+            println!("{:?} typecheck error on {:?}\n", typecheck.unwrap_err(), stmnt);
+        } else {
+            println!("{:?} evaluator error on {:?}\n", evaluated.unwrap_err(), stmnt);
+        }
         TestResult::failed()
     }
 }
