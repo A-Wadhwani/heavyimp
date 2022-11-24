@@ -121,7 +121,7 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             let mut value = eval_expr(expr, store, heap)?;
             let mut count = 0;
             while let Bool(true) = value {
-                if count > 1000 {
+                if count > 20 {
                     // We don't want to loop forever, automatically break here
                     return Ok(());
                 }

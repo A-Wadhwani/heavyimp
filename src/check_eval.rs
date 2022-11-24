@@ -254,8 +254,9 @@ fn random_reference(g: &mut quickcheck::Gen, name: &str) -> Option<String> {
 
 pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
     if false {
+                // This test can be ignored if it does not type check
+
         println!("Discarding Test: {:?}\n", stmnt);
-        // This test can be ignored if it does not type check
         return TestResult::discard();
     }
     NAMES.lock().unwrap().clear();
@@ -267,7 +268,7 @@ pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
         TestResult::passed()
     } else {
         let err = val.unwrap_err();
-        // println!("{:?} error on {:?}\n", err, stmnt);
+        println!("{:?} error on {:?}\n", err, stmnt);
         TestResult::failed()
     }
 }
