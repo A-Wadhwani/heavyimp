@@ -1,6 +1,6 @@
 pub type Ident = String;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Constant {
     Nat(i64),
     Bool(bool),

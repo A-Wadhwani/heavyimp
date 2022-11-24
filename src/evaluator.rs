@@ -33,7 +33,7 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
             Ok(Constant::Nat(*value))
         }
         // Return the constant
-        Expr::Constant(c) => Ok(c.clone()),
+        Expr::Constant(c) => Ok(*c),
         // Evaluate expressions if they're the correct values
         Expr::NatAdd(a, b) => {
             let a = eval_expr(a, store, heap)?;
@@ -72,20 +72,23 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
 fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResult<()> {
     match stmnt {
         Statement::StoreAssign(id, expr) => {
-            let value = eval_expr(expr, store, heap)?;
-            match value {
-                Nat(i) => {
-                    store.insert(id.clone(), Value::Number(i));
-                    Ok(())
-                }
-                _ => Err(TypeMismatch),
-            }
+            let value = eval_expr(expr, store, heap).and_then(get_nat)?;
+            // If value is present, make sure it's a number
+            match store.get(id) {
+                Some(Value::Number(_)) | None => store.insert(id.clone(), Value::Number(value)),
+                Some(Value::Location(_)) => Err(BoundTypeMismatch)?,
+            };
+            Ok(())
         }
         Statement::HeapNew(id, expr) => {
             let value = eval_expr(expr, store, heap).and_then(get_nat)?;
             let index = heap.len();
             heap.push(value);
-            store.insert(id.clone(), Value::Location(index));
+            // If value is present, make sure it's a location
+            match store.get(id) {
+                Some(Value::Location(_)) | None => store.insert(id.clone(), Value::Location(index)),
+                Some(Value::Number(_)) => Err(BoundTypeMismatch)?,
+            };
             Ok(())
         }
         Statement::HeapUpdate(id, expr) => {
@@ -120,7 +123,7 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             while let Bool(true) = value {
                 if count > 1000 {
                     // We don't want to loop forever, automatically break here
-                    return Ok(())
+                    return Ok(());
                 }
                 eval_stmnt(loop_s, store, heap)?;
                 value = eval_expr(expr, store, heap)?;
@@ -136,14 +139,14 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
     }
 }
 
-fn get_nat(c: Constant) -> EvalResult<i64> {
+const fn get_nat(c: Constant) -> EvalResult<i64> {
     match c {
         Nat(i) => Ok(i),
-        _ => Err(TypeMismatch),
+        Bool(_) => Err(TypeMismatch),
     }
 }
 
-fn get_loc(v: &Value) -> EvalResult<usize> {
+const fn get_loc(v: &Value) -> EvalResult<usize> {
     match v {
         Value::Number(_) => Err(TypeMismatch),
         Value::Location(l) => Ok(*l),
@@ -214,10 +217,7 @@ mod tests {
                         ),
                     )),
                 )),
-                Box::new(Statement::HeapNew(
-                    "y".into(),
-                    Expr::HeapRead("z".into()),
-                )),
+                Box::new(Statement::HeapNew("y".into(), Expr::HeapRead("z".into()))),
             )),
         );
         let (store, heap) = eval_program(&program).unwrap();
@@ -249,14 +249,8 @@ mod tests {
                         Box::new(Expr::HeapRead("x".into())),
                         Box::new(Expr::Constant(Nat(0))),
                     ),
-                    Box::new(Statement::HeapNew(
-                        "y".into(),
-                        Expr::HeapRead("z".into()),
-                    )),
-                    Box::new(Statement::HeapNew(
-                        "y".into(),
-                        Expr::Constant(Nat(4)),
-                    )),
+                    Box::new(Statement::HeapNew("y".into(), Expr::HeapRead("z".into()))),
+                    Box::new(Statement::HeapNew("y".into(), Expr::Constant(Nat(4)))),
                 )),
             )),
         );

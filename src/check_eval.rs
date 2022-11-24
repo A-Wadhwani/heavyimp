@@ -1,6 +1,7 @@
 use std::{collections::HashSet, sync::Mutex};
 
 use crate::{
+    error::EvalError,
     evaluator,
     syntax::{Constant, Constant::*, Expr, Statement},
 };
@@ -32,62 +33,62 @@ impl Arbitrary for Constant {
 impl Arbitrary for Expr {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         match u8::arbitrary(g) % 10 {
-            0 => random_reference(g, "").map_or(Self::arbitrary(g), Expr::StoreRead),
-            1 => random_reference(g, "").map_or(Self::arbitrary(g), Expr::HeapRead),
-            2..=5 => Expr::Constant(Constant::arbitrary(g)),
-            6 => Expr::NatAdd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            7 => Expr::NatLeq(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            8 => Expr::BoolAnd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            9 => Expr::BoolNot(Box::new(Self::arbitrary(g))),
+            0 => random_reference(g, "").map_or(Self::arbitrary(g), Self::StoreRead),
+            1 => random_reference(g, "").map_or(Self::arbitrary(g), Self::HeapRead),
+            2..=5 => Self::Constant(Constant::arbitrary(g)),
+            6 => Self::NatAdd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
+            7 => Self::NatLeq(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
+            8 => Self::BoolAnd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
+            9 => Self::BoolNot(Box::new(Self::arbitrary(g))),
             _ => unreachable!(),
         }
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
-            Expr::StoreRead(_) => empty_shrinker(),
-            Expr::HeapRead(_) => empty_shrinker(),
-            Expr::Constant(_) => Box::new(std::iter::empty()),
-            Expr::NatAdd(e1, e2) => {
+            Self::StoreRead(_) => empty_shrinker(),
+            Self::HeapRead(_) => empty_shrinker(),
+            Self::Constant(_) => Box::new(std::iter::empty()),
+            Self::NatAdd(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Expr::NatAdd(e1, e2.clone()));
+                    shrinks.push(Self::NatAdd(e1, e2.clone()));
                 }
                 for e2 in e2.shrink() {
-                    shrinks.push(Expr::NatAdd(e1.clone(), e2));
+                    shrinks.push(Self::NatAdd(e1.clone(), e2));
                 }
                 shrinks.push(*e1.clone());
                 shrinks.push(*e2.clone());
                 Box::new(shrinks.into_iter())
             }
-            Expr::NatLeq(e1, e2) => {
+            Self::NatLeq(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Expr::NatLeq(e1, e2.clone()));
+                    shrinks.push(Self::NatLeq(e1, e2.clone()));
                 }
                 for e2 in e2.shrink() {
-                    shrinks.push(Expr::NatLeq(e1.clone(), e2));
+                    shrinks.push(Self::NatLeq(e1.clone(), e2));
                 }
                 shrinks.push(*e1.clone());
                 shrinks.push(*e2.clone());
                 Box::new(shrinks.into_iter())
             }
-            Expr::BoolAnd(e1, e2) => {
+            Self::BoolAnd(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Expr::BoolAnd(e1, e2.clone()));
+                    shrinks.push(Self::BoolAnd(e1, e2.clone()));
                 }
                 for e2 in e2.shrink() {
-                    shrinks.push(Expr::BoolAnd(e1.clone(), e2));
+                    shrinks.push(Self::BoolAnd(e1.clone(), e2));
                 }
                 shrinks.push(*e1.clone());
                 shrinks.push(*e2.clone());
                 Box::new(shrinks.into_iter())
             }
-            Expr::BoolNot(e1) => {
+            Self::BoolNot(e1) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Expr::BoolNot(e1));
+                    shrinks.push(Self::BoolNot(e1));
                 }
                 shrinks.push(*e1.clone());
                 Box::new(shrinks.into_iter())
@@ -98,93 +99,95 @@ impl Arbitrary for Expr {
 
 impl Arbitrary for Statement {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        match u8::arbitrary(g) % 100 + 1 {
-            1..=15 => Statement::StoreAssign(arbitrary_ident(g), Expr::arbitrary(g)),
-            16..=30 => Statement::HeapNew(arbitrary_ident(g), Expr::arbitrary(g)),
-            31..=35 => random_reference(g, "").map_or(Statement::Skip, |name| {
-                Statement::HeapUpdate(name, Expr::arbitrary(g))
-            }),
-            36..=40 => {
+        match u8::arbitrary(g) % 105 + 1 {
+            1..=15 => Self::StoreAssign(arbitrary_ident(g), Expr::arbitrary(g)),
+            16..=30 => Self::HeapNew(arbitrary_ident(g), Expr::arbitrary(g)),
+            31..=35 => match random_reference(g, "") {
+                Some(r) => Self::HeapUpdate(r, Expr::arbitrary(g)),
+                None => Self::arbitrary(g),
+            },
+            36..=45 => {
                 let alias = arbitrary_ident(g);
-                random_reference(g, alias.as_str())
-                    .map_or(Statement::Skip, |name| Statement::HeapAlias(alias, name))
+                match random_reference(g, "") {
+                    Some(r) => Self::HeapAlias(alias, r),
+                    None => Self::arbitrary(g),
+                }
             }
-            41..=65 => {
-                Statement::Sequence(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g)))
-            }
-            66..=90 => Statement::Conditional(
+            46..=65 => Self::Sequence(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
+            66..=90 => Self::Conditional(
                 Expr::arbitrary(g),
                 Box::new(Self::arbitrary(g)),
                 Box::new(Self::arbitrary(g)),
             ),
-            91..=100 => Statement::While(Expr::arbitrary(g), Box::new(Self::arbitrary(g))),
+            91..=100 => Self::While(Expr::arbitrary(g), Box::new(Self::arbitrary(g))),
+            101..=105 => Self::Skip,
             _ => unreachable!(),
         }
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
-            Statement::StoreAssign(id, expr) => {
+            Self::StoreAssign(id, expr) => {
                 let mut shrinks = Vec::new();
                 for expr in expr.shrink() {
-                    shrinks.push(Statement::StoreAssign(id.clone(), expr));
+                    shrinks.push(Self::StoreAssign(id.clone(), expr));
                 }
                 Box::new(shrinks.into_iter())
             }
-            Statement::HeapNew(id, expr) => {
+            Self::HeapNew(id, expr) => {
                 let mut shrinks = Vec::new();
                 for expr in expr.shrink() {
-                    shrinks.push(Statement::HeapNew(id.clone(), expr));
+                    shrinks.push(Self::HeapNew(id.clone(), expr));
                 }
                 Box::new(shrinks.into_iter())
             }
-            Statement::HeapUpdate(id, expr) => {
+            Self::HeapUpdate(id, expr) => {
                 let mut shrinks = Vec::new();
                 for expr in expr.shrink() {
-                    shrinks.push(Statement::HeapUpdate(id.clone(), expr));
+                    shrinks.push(Self::HeapUpdate(id.clone(), expr));
                 }
                 Box::new(shrinks.into_iter())
             }
-            Statement::HeapAlias(_, _) => empty_shrinker(),
-            Statement::Sequence(e1, e2) => {
+            Self::HeapAlias(_, _) => empty_shrinker(),
+            Self::Sequence(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Statement::Sequence(e1, e2.clone()));
+                    shrinks.push(Self::Sequence(e1, e2.clone()));
                 }
                 for e2 in e2.shrink() {
-                    shrinks.push(Statement::Sequence(e1.clone(), e2));
+                    shrinks.push(Self::Sequence(e1.clone(), e2));
                 }
                 shrinks.push(*e1.clone());
                 shrinks.push(*e2.clone());
                 Box::new(shrinks.into_iter())
             }
-            Statement::Conditional(expr, then_e, else_e) => {
+            Self::Conditional(expr, then_e, else_e) => {
                 let mut shrinks = Vec::new();
                 for expr in expr.shrink() {
-                    shrinks.push(Statement::Conditional(expr, then_e.clone(), else_e.clone()));
+                    shrinks.push(Self::Conditional(expr, then_e.clone(), else_e.clone()));
                 }
                 for then_e in then_e.shrink() {
-                    shrinks.push(Statement::Conditional(expr.clone(), then_e, else_e.clone()));
+                    shrinks.push(Self::Conditional(expr.clone(), then_e, else_e.clone()));
                 }
                 for else_e in else_e.shrink() {
-                    shrinks.push(Statement::Conditional(expr.clone(), then_e.clone(), else_e));
+                    shrinks.push(Self::Conditional(expr.clone(), then_e.clone(), else_e));
                 }
                 shrinks.push(*then_e.clone());
                 shrinks.push(*else_e.clone());
                 Box::new(shrinks.into_iter())
             }
-            Statement::While(expr, do_e) => {
+            Self::While(expr, do_e) => {
                 let mut shrinks = Vec::new();
                 for expr in expr.shrink() {
-                    shrinks.push(Statement::While(expr, do_e.clone()));
+                    shrinks.push(Self::While(expr, do_e.clone()));
                 }
                 for do_e in do_e.shrink() {
-                    shrinks.push(Statement::While(expr.clone(), do_e));
+                    shrinks.push(Self::While(expr.clone(), do_e));
                 }
                 shrinks.push(*do_e.clone());
                 Box::new(shrinks.into_iter())
             }
-            Statement::Skip => empty_shrinker(),
+            Self::Skip => empty_shrinker(),
         }
     }
 }
@@ -192,6 +195,8 @@ impl Arbitrary for Statement {
 // A cleaner to read string
 fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
     let mut s = String::new();
+    // Occasionally use a random reference
+
     let mut i = u8::arbitrary(g) % 10 + 4;
     while i > 0 {
         // Just letters
@@ -199,19 +204,23 @@ fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
         i -= 1;
     }
     NAMES.lock().unwrap().insert(s.clone());
-    s
+    if bool::arbitrary(g) {
+        random_reference(g, "").unwrap_or(s)
+    } else {
+        s
+    }
 }
 
 fn random_reference(g: &mut quickcheck::Gen, name: &str) -> Option<String> {
     Some(
-        g.choose(
+        (*g.choose(
             &NAMES
                 .lock()
                 .unwrap()
                 .iter()
                 .filter(|n| n != &name)
                 .collect::<Vec<_>>(),
-        )?
+        )?)
         .to_string(),
     )
 }
@@ -233,7 +242,15 @@ pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
         println!("Passed on {:?}\n", stmnt);
         TestResult::passed()
     } else {
-        println!("{:?} error on {:?}\n", val.unwrap_err(), stmnt);
+        let err = val.unwrap_err();
+        match err {
+            EvalError::UnboundVariable | EvalError::TypeMismatch => {
+                println!("Discarding Test: {:?}\n", stmnt);
+                return TestResult::discard();
+            }
+            _ => (),
+        };
+        println!("{:?} error on {:?}\n", err, stmnt);
         TestResult::failed()
     }
 }
