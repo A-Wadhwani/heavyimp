@@ -6,6 +6,7 @@ mod check_eval;
 pub mod error;
 pub mod evaluator;
 pub mod syntax;
+pub mod typechecker;
 
 #[macro_use]
 extern crate lazy_static;
