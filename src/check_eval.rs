@@ -99,30 +99,12 @@ impl Arbitrary for Expr {
 
 impl Arbitrary for Statement {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        match u8::arbitrary(g) % 105 + 1 {
-            1..=15 => Self::StoreAssign(arbitrary_ident(g), Expr::arbitrary(g)),
-            16..=30 => Self::HeapNew(arbitrary_ident(g), Expr::arbitrary(g)),
-            31..=35 => match random_reference(g, "") {
-                Some(r) => Self::HeapUpdate(r, Expr::arbitrary(g)),
-                None => Self::arbitrary(g),
-            },
-            36..=45 => {
-                let alias = arbitrary_ident(g);
-                match random_reference(g, "") {
-                    Some(r) => Self::HeapAlias(alias, r),
-                    None => Self::arbitrary(g),
-                }
-            }
-            46..=65 => Self::Sequence(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            66..=90 => Self::Conditional(
-                Expr::arbitrary(g),
-                Box::new(Self::arbitrary(g)),
-                Box::new(Self::arbitrary(g)),
-            ),
-            91..=100 => Self::While(Expr::arbitrary(g), Box::new(Self::arbitrary(g))),
-            101..=105 => Self::Skip,
-            _ => unreachable!(),
+        let mut stmnt = Self::generate_stmnts(g);
+        // Ensure we have a statment of big-enough size
+        while stmnt.size() < g.size() {
+            stmnt = Self::Sequence(Box::new(stmnt), Box::new(Self::generate_stmnts(g)));
         }
+        stmnt
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -192,6 +174,52 @@ impl Arbitrary for Statement {
     }
 }
 
+impl Statement {
+    fn generate_stmnts(g: &mut quickcheck::Gen) -> Statement {
+        match u8::arbitrary(g) % 105 + 1 {
+            1..=15 => Self::StoreAssign(arbitrary_ident(g), Expr::arbitrary(g)),
+            16..=30 => Self::HeapNew(arbitrary_ident(g), Expr::arbitrary(g)),
+            31..=35 => match random_reference(g, "") {
+                Some(r) => Self::HeapUpdate(r, Expr::arbitrary(g)),
+                None => Self::generate_stmnts(g),
+            },
+            36..=45 => {
+                let alias = arbitrary_ident(g);
+                match random_reference(g, "") {
+                    Some(r) => Self::HeapAlias(alias, r),
+                    None => Self::generate_stmnts(g),
+                }
+            }
+            46..=65 => Self::Sequence(
+                Box::new(Self::generate_stmnts(g)),
+                Box::new(Self::generate_stmnts(g)),
+            ),
+            66..=90 => Self::Conditional(
+                Expr::arbitrary(g),
+                Box::new(Self::generate_stmnts(g)),
+                Box::new(Self::generate_stmnts(g)),
+            ),
+            91..=100 => Self::While(Expr::arbitrary(g), Box::new(Self::generate_stmnts(g))),
+            101..=105 => Self::Skip,
+            _ => unreachable!(),
+        }
+    }
+
+    // Size of a statement is the number of statements in the sequence
+    fn size(&self) -> usize {
+        match self {
+            Self::StoreAssign(_, _) => 1,
+            Self::HeapNew(_, _) => 1,
+            Self::HeapUpdate(_, _) => 1,
+            Self::HeapAlias(_, _) => 1,
+            Self::Sequence(e1, e2) => e1.size() + e2.size(),
+            Self::Conditional(_, then_e, else_e) => then_e.size() + else_e.size(),
+            Self::While(_, do_e) => do_e.size(),
+            Self::Skip => 1,
+        }
+    }
+}
+
 // A cleaner to read string
 fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
     let mut s = String::new();
@@ -225,10 +253,6 @@ fn random_reference(g: &mut quickcheck::Gen, name: &str) -> Option<String> {
     )
 }
 
-fn contains_names() -> bool {
-    !NAMES.lock().unwrap().is_empty()
-}
-
 pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
     // Check if it passes the type-checker here
     if false {
@@ -243,13 +267,6 @@ pub fn quick_check_evaluator(stmnt: Statement) -> TestResult {
         TestResult::passed()
     } else {
         let err = val.unwrap_err();
-        match err {
-            EvalError::UnboundVariable | EvalError::TypeMismatch => {
-                println!("Discarding Test: {:?}\n", stmnt);
-                return TestResult::discard();
-            }
-            _ => (),
-        };
         println!("{:?} error on {:?}\n", err, stmnt);
         TestResult::failed()
     }
