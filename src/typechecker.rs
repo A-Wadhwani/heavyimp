@@ -1,4 +1,4 @@
-use crate::syntax::{Statement, Expr};
+use crate::syntax::{Statement, Expr, Constant};
 use crate::error::TypeError;
 use std::collections::HashMap;
 
@@ -18,7 +18,40 @@ fn expect_ty(expected: Type, got: Type) -> Result<Type, TypeError> {
 }
 
 fn typecheck_expr_aux(sigma: &HashMap<String, Type>, ast: &Expr) -> Result<Type, TypeError> {
-    todo!()
+    match ast {
+        Expr::StoreRead(x) => {
+            let x_ty = sigma.get(x).ok_or(TypeError::UnboundVariable)?;
+            expect_ty(Type::Number, *x_ty)
+        }
+        Expr::HeapRead(x) => {
+            let ix_ty = sigma.get(x).ok_or(TypeError::UnboundVariable)?;
+            expect_ty(Type::Location, *ix_ty)
+        }
+        Expr::Constant(Constant::Nat(_)) => Ok(Type::Number),
+        Expr::Constant(Constant::Bool(_)) => Ok(Type::Boolean),
+        Expr::NatAdd(a, b) => {
+            let a_ty = typecheck_expr_aux(sigma, a)?;
+            let b_ty = typecheck_expr_aux(sigma, b)?;
+            expect_ty(Type::Number, a_ty)?;
+            expect_ty(Type::Number, b_ty)
+        }
+        Expr::NatLeq(a, b) => {
+            let a_ty = typecheck_expr_aux(sigma, a)?;
+            let b_ty = typecheck_expr_aux(sigma, b)?;
+            expect_ty(Type::Number, a_ty)?;
+            expect_ty(Type::Number, b_ty)
+        }
+        Expr::BoolAnd(a, b) => {
+            let a_ty = typecheck_expr_aux(sigma, a)?;
+            let b_ty = typecheck_expr_aux(sigma, b)?;
+            expect_ty(Type::Boolean, a_ty)?;
+            expect_ty(Type::Boolean, b_ty)
+        }
+        Expr::BoolNot(a) => {
+            let a_ty = typecheck_expr_aux(sigma, a)?;
+            expect_ty(Type::Boolean, a_ty)
+        }
+    }
 }
 
 fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Result<(), TypeError> {
