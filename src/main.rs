@@ -15,7 +15,7 @@ fn main() {
     // Check if the evaluator does not throw an error, given that the type-checker passes
     quickcheck::QuickCheck::new()
         .min_tests_passed(500)
-        .tests(500)
+        .tests(4000)
         .max_tests(100000)
         .gen(Gen::new(20))
         .quickcheck(quick_check as fn(Statement) -> TestResult);

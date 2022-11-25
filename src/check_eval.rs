@@ -343,13 +343,15 @@ fn random_heap(g: &mut Gen) -> Option<String> {
 
 // Determines how likely it is to generate a faulty program (needs to be a very tiny number)
 fn random(g: &mut Gen) -> bool {
-    (u64::arbitrary(g) % 1_000_000_000_000) == 0
+    u64::arbitrary(g) % 1_000_000 == 0
 }
 
 pub fn quick_check(stmnt: Statement) -> TestResult {
     let typecheck = typecheck(&stmnt);
     let evaluated = eval_program(&stmnt);
 
+    // Typecheck passes means evaluating passes
+    // Typecheck fails does not always mean evaluating fails
     if typecheck.is_err() {
         TestResult::discard()
     } else if evaluated.is_err() {

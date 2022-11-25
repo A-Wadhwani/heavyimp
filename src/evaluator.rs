@@ -39,7 +39,8 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
             let a = eval_expr(a, store, heap)?;
             let b = eval_expr(b, store, heap)?;
             match (a, b) {
-                (Nat(a), Nat(b)) => Ok(Nat(a + b)),
+                // Addition might overflow, so we need to check for that
+                (Nat(a), Nat(b)) => Ok(Nat(a.checked_add(b).unwrap_or(0))),
                 _ => Err(TypeMismatch),
             }
         }
@@ -121,7 +122,7 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             let mut value = eval_expr(expr, store, heap)?;
             let mut count = 0;
             while let Bool(true) = value {
-                if count > 20 {
+                if count > 5 {
                     // We don't want to loop forever, automatically break here
                     return Ok(());
                 }
@@ -262,5 +263,35 @@ mod tests {
         assert_eq!(heap[0], 1);
         assert_eq!(heap[1], 3);
         assert_eq!(heap[2], 4);
+    }
+
+    #[test]
+    fn test_loop_break() {
+        let program = Statement::Sequence(
+            Box::new(Statement::Sequence(
+                Box::new(Statement::HeapNew("wzedt".into(), Expr::Constant(Nat(27)))),
+                Box::new(Statement::HeapAlias("elax".into(), "wzedt".into())),
+            )),
+            Box::new(Statement::While(
+                Expr::Constant(Bool(true)),
+                Box::new(Statement::While(
+                    Expr::BoolNot(Box::new(Expr::NatLeq(
+                        Box::new(Expr::Constant(Nat(0))),
+                        Box::new(Expr::Constant(Nat(-1))),
+                    ))),
+                    Box::new(Statement::HeapUpdate(
+                        "wzedt".into(),
+                        Expr::NatAdd(
+                            Box::new(Expr::HeapRead("elax".into())),
+                            Box::new(Expr::HeapRead("elax".into())),
+                        ),
+                    )),
+                )),
+            )),
+        );
+        let (store, heap) = eval_program(&program).unwrap();
+        assert_eq!(store.get("wzedt"), Some(&Value::Location(0)));
+        assert_eq!(store.get("elax"), Some(&Value::Location(0)));
+        assert_eq!(heap.len(), 1);
     }
 }
