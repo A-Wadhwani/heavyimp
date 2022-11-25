@@ -16,7 +16,6 @@ fn main() {
     quickcheck::QuickCheck::new()
         .tests(500)
         .max_tests(5000000)
-        .min_tests_passed(500)
-        .gen(Gen::new(30))
+        .gen(Gen::new(50))
         .quickcheck(quick_check as fn(Statement) -> TestResult);
 }

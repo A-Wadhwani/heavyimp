@@ -1,25 +1,26 @@
-use std::{collections::HashSet, sync::Mutex, any::type_name};
+use std::{any::type_name, collections::HashSet, sync::Mutex};
 
 use crate::{
     evaluator::{self, eval_program},
     syntax::{Constant, Constant::*, Expr, Statement},
     typechecker::typecheck,
 };
-use quickcheck::{empty_shrinker, Arbitrary, TestResult};
+use quickcheck::{empty_shrinker, Arbitrary, Gen, TestResult};
 
 lazy_static! {
-    static ref NAMES: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+    static ref STORE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+    static ref HEAP: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
 }
 
 // Quick Checking for the Evaluator
 
-impl Arbitrary for Constant {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        if bool::arbitrary(g) {
-            Nat(i8::arbitrary(g) as i64)
-        } else {
-            Bool(bool::arbitrary(g))
-        }
+impl Constant {
+    fn arbitrary_int(g: &mut Gen) -> Self {
+        Nat(i8::arbitrary(g) as i64)
+    }
+
+    fn arbitrary_bool(g: &mut Gen) -> Self {
+        Bool(bool::arbitrary(g))
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -30,32 +31,64 @@ impl Arbitrary for Constant {
     }
 }
 
-impl Arbitrary for Expr {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        match u8::arbitrary(g) % 20 {
-            0 => random_reference(g, "").map_or(Self::arbitrary(g), Self::StoreRead),
-            1 => random_reference(g, "").map_or(Self::arbitrary(g), Self::HeapRead),
-            2..=10 => Self::Constant(Constant::arbitrary(g)),
-            11..=13 => Self::NatAdd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            14..=15 => Self::NatLeq(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            16..=17 => Self::BoolAnd(Box::new(Self::arbitrary(g)), Box::new(Self::arbitrary(g))),
-            18..=20 => Self::BoolNot(Box::new(Self::arbitrary(g))),
+impl Expr {
+    // Generate a nat expression
+    fn arbitrary_nat(g: &mut Gen) -> Self {
+        let constant = Self::Constant(Constant::arbitrary_int(g));
+        match u8::arbitrary(g) % 4 {
+            0 => random_store(g).map_or(constant, Self::StoreRead),
+            1 => random_heap(g).map_or(constant, Self::HeapRead),
+            2 => constant,
+            3 => Self::NatAdd(
+                Box::new(Self::arbitrary_nat(g)),
+                Box::new(Self::arbitrary_nat(g)),
+            ),
             _ => unreachable!(),
         }
+    }
+
+    fn arbitrary_bool(g: &mut Gen) -> Self {
+        match u8::arbitrary(g) % 4 {
+            0 => Self::NatLeq(
+                Box::new(Self::arbitrary_nat(g)),
+                Box::new(Self::arbitrary_nat(g)),
+            ),
+            1 => Self::BoolAnd(
+                Box::new(Self::arbitrary_bool(g)),
+                Box::new(Self::arbitrary_bool(g)),
+            ),
+            2 => Self::BoolNot(Box::new(Self::arbitrary_bool(g))),
+            3 => Self::Constant(Constant::arbitrary_bool(g)),
+            _ => unreachable!(),
+        }
+    }
+
+    fn arbitrary_store(g: &mut Gen, s: &String) -> Self {
+        STORE.lock().unwrap().remove(s);
+        let res = Self::arbitrary_nat(g);
+        STORE.lock().unwrap().insert(s.clone());
+        res
+    }
+
+    fn arbitrary_heap(g: &mut Gen, s: &String) -> Self {
+        HEAP.lock().unwrap().remove(s);
+        let res = Self::arbitrary_nat(g);
+        HEAP.lock().unwrap().insert(s.clone());
+        res
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
             Self::StoreRead(_) => empty_shrinker(),
             Self::HeapRead(_) => empty_shrinker(),
-            Self::Constant(_) => Box::new(std::iter::empty()),
+            Self::Constant(c) => Box::new(c.shrink().map(Self::Constant)),
             Self::NatAdd(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Self::NatAdd(e1, e2.clone()));
+                    shrinks.push(Self::NatAdd(Box::new(e1), e2.clone()));
                 }
                 for e2 in e2.shrink() {
-                    shrinks.push(Self::NatAdd(e1.clone(), e2));
+                    shrinks.push(Self::NatAdd(e1.clone(), Box::new(e2)));
                 }
                 shrinks.push(*e1.clone());
                 shrinks.push(*e2.clone());
@@ -64,10 +97,10 @@ impl Arbitrary for Expr {
             Self::NatLeq(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Self::NatLeq(e1, e2.clone()));
+                    shrinks.push(Self::NatLeq(Box::new(e1), e2.clone()));
                 }
                 for e2 in e2.shrink() {
-                    shrinks.push(Self::NatLeq(e1.clone(), e2));
+                    shrinks.push(Self::NatLeq(e1.clone(), Box::new(e2)));
                 }
                 shrinks.push(*e1.clone());
                 shrinks.push(*e2.clone());
@@ -76,10 +109,10 @@ impl Arbitrary for Expr {
             Self::BoolAnd(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Self::BoolAnd(e1, e2.clone()));
+                    shrinks.push(Self::BoolAnd(Box::new(e1), e2.clone()));
                 }
                 for e2 in e2.shrink() {
-                    shrinks.push(Self::BoolAnd(e1.clone(), e2));
+                    shrinks.push(Self::BoolAnd(e1.clone(), Box::new(e2)));
                 }
                 shrinks.push(*e1.clone());
                 shrinks.push(*e2.clone());
@@ -88,7 +121,7 @@ impl Arbitrary for Expr {
             Self::BoolNot(e1) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Self::BoolNot(e1));
+                    shrinks.push(Self::BoolNot(Box::new(e1)));
                 }
                 shrinks.push(*e1.clone());
                 Box::new(shrinks.into_iter())
@@ -98,7 +131,9 @@ impl Arbitrary for Expr {
 }
 
 impl Arbitrary for Statement {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+    fn arbitrary(g: &mut Gen) -> Self {
+        STORE.lock().unwrap().clear();
+        HEAP.lock().unwrap().clear();
         let mut stmnt = Self::generate_stmnts(g);
         // Ensure we have a statment of big-enough size
         while stmnt.size() < g.size() {
@@ -175,33 +210,47 @@ impl Arbitrary for Statement {
 }
 
 impl Statement {
-    fn generate_stmnts(g: &mut quickcheck::Gen) -> Statement {
+    fn generate_stmnts(g: &mut Gen) -> Statement {
         match u8::arbitrary(g) % 105 + 1 {
-            1..=15 => Self::StoreAssign(arbitrary_ident(g), Expr::arbitrary(g)),
-            16..=30 => Self::HeapNew(arbitrary_ident(g), Expr::arbitrary(g)),
-            31..=35 => match random_reference(g, "") {
-                Some(r) => Self::HeapUpdate(r, Expr::arbitrary(g)),
+            1..=15 => {
+                let id = arbitrary_ident(g, true);
+                let expr = Expr::arbitrary_store(g, &id);
+                Self::StoreAssign(id, expr)
+            }
+            16..=30 => {
+                let id = arbitrary_ident(g, false);
+                let expr = Expr::arbitrary_heap(g, &id);
+                Self::HeapNew(id, expr)
+            }
+            31..=35 => match random_heap(g) {
+                Some(r) => {
+                    let expr = Expr::arbitrary_heap(g, &r);
+                    Self::HeapUpdate(r, expr)
+                }
                 None => Self::generate_stmnts(g),
             },
-            36..=45 => {
-                let alias = arbitrary_ident(g);
-                match random_reference(g, alias.as_str()) {
-                    Some(r) => Self::HeapAlias(r, alias),
-                    None => Self::generate_stmnts(g),
+            36..=45 => match random_heap(g) {
+                Some(r) => {
+                    let alias = arbitrary_ident(g, false);
+                    Self::HeapAlias(alias, r)
                 }
-            }
+                None => Self::generate_stmnts(g),
+            },
             46..=65 => Self::Sequence(
                 Box::new(Self::generate_stmnts(g)),
                 Box::new(Self::generate_stmnts(g)),
             ),
-            66..=90 => Self::Conditional(
-                Expr::arbitrary(g),
-                Box::new(Self::generate_stmnts(g)),
-                Box::new(Self::generate_stmnts(g)),
-            ),
-            91..=100 => Self::While(Expr::arbitrary(g), Box::new(Self::generate_stmnts(g))),
-            101..=105 => Self::Skip,
-            _ => unreachable!(),
+            66..=90 => {
+                let sets = clone_sets();
+                let cond = Expr::arbitrary_bool(g);
+                let then_e = Self::generate_stmnts(g);
+                restore_sets(&sets);
+                let else_e = Self::generate_stmnts(g);
+                restore_sets(&sets);
+                Self::Conditional(cond, Box::new(then_e), Box::new(else_e))
+            }
+            // 91..=100 => Self::While(Expr::arbitrary_bool(g), Box::new(Self::generate_stmnts(g))),
+            _ => Self::Skip,
         }
     }
 
@@ -220,8 +269,17 @@ impl Statement {
     }
 }
 
+fn clone_sets() -> (HashSet<String>, HashSet<String>) {
+    (STORE.lock().unwrap().clone(), HEAP.lock().unwrap().clone())
+}
+
+fn restore_sets(set: &(HashSet<String>, HashSet<String>)) {
+    STORE.lock().unwrap().clone_from(&set.0);
+    HEAP.lock().unwrap().clone_from(&set.1);
+}
+
 // A cleaner to read string
-fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
+fn arbitrary_ident(g: &mut Gen, store: bool) -> String {
     let mut s = String::new();
     // Occasionally use a random reference
 
@@ -231,41 +289,54 @@ fn arbitrary_ident(g: &mut quickcheck::Gen) -> String {
         s.push(char::from(b'a' + u8::arbitrary(g) % 26));
         i -= 1;
     }
-    NAMES.lock().unwrap().insert(s.clone());
-    if u8::arbitrary(g) % 10 <= 2 {
-        random_reference(g, "").unwrap_or(s)
+    if store {
+        STORE.lock().unwrap().insert(s.clone());
     } else {
-        s
+        HEAP.lock().unwrap().insert(s.clone());
     }
+    s
 }
 
-fn random_reference(g: &mut quickcheck::Gen, name: &str) -> Option<String> {
-    Some(
-        (*g.choose(
-            &NAMES
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|n| n != &name)
-                .collect::<Vec<_>>(),
-        )?)
-        .to_string(),
-    )
+fn random_store(g: &mut Gen) -> Option<String> {
+    Some((*g.choose(&STORE.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
+}
+
+fn random_heap(g: &mut Gen) -> Option<String> {
+    Some((*g.choose(&HEAP.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
 }
 
 pub fn quick_check(stmnt: Statement) -> TestResult {
     let typecheck = typecheck(&stmnt);
     let evaluated = eval_program(&stmnt);
-
-    if typecheck.is_err() == evaluated.is_err() {
-        println!("Passed on {:?}\n", stmnt);
-        TestResult::passed()
-    } else {
-        if typecheck.is_err() {
-            println!("{:?} typecheck error on {:?}\n", typecheck.unwrap_err(), stmnt);
-        } else {
-            println!("{:?} evaluator error on {:?}\n", evaluated.unwrap_err(), stmnt);
-        }
+    if evaluated.is_err() {
+        println!(
+            "{:?} typecheck error on {:?}\n",
+            evaluated.unwrap_err(),
+            stmnt
+        );
         TestResult::failed()
+    } else {
+        println!("Passed typecheck: {:?}\n", stmnt);
+        TestResult::passed()
     }
+    // if typecheck.is_err() {
+    //     println!(
+    //         "{:?} typecheck error on {:?}\n",
+    //         typecheck.unwrap_err(),
+    //         stmnt
+    //     );
+    //     TestResult::discard()
+    // } else {
+    //     // Given the typecheck passed, the evaluation should not fail
+    //     if evaluated.is_err() {
+    //         println!(
+    //             "{:?} evaluation error on {:?}\n",
+    //             evaluated.unwrap_err(),
+    //             stmnt
+    //         );
+    //         TestResult::failed()
+    //     } else {
+    //         TestResult::passed()
+    //     }
+    // }
 }

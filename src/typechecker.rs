@@ -1,7 +1,6 @@
-use crate::syntax::{Statement, Expr, Constant};
 use crate::error::TypeError;
+use crate::syntax::{Constant, Expr, Statement};
 use std::collections::HashMap;
-
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Type {
@@ -23,7 +22,11 @@ fn expect_ty(expected: Type, got: Type) -> Result<Type, TypeError> {
     }
 }
 
-fn expect_expr_ty(expected: Type, ast: &Expr, sigma: &HashMap<String, Type>) -> Result<Type, TypeError> {
+fn expect_expr_ty(
+    expected: Type,
+    ast: &Expr,
+    sigma: &HashMap<String, Type>,
+) -> Result<Type, TypeError> {
     let expr_ty = typecheck_expr_aux(sigma, ast)?;
     expect_ty(expected, expr_ty)
 }
@@ -104,42 +107,40 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
             expect_expr_ty(Type::Boolean, cond, sigma)?;
             typecheck_stmt_aux(sigma, luup)
         }
-        Statement::Skip => {
-            Ok(())
-        }
+        Statement::Skip => Ok(()),
     }
 }
 
 #[allow(unused)]
 mod test {
-    use crate::syntax::{*, Constant::*};
     use super::*;
+    use crate::syntax::{Constant::*, *};
 
     #[test]
     fn basic_test() -> Result<(), TypeError> {
         let program = Statement::Sequence(
             Box::new(Statement::HeapNew("x".into(), Expr::Constant(Nat(1)))),
             Box::new(Statement::Sequence(
-                    Box::new(Statement::Sequence(
-                            Box::new(Statement::HeapNew("z".into(), Expr::Constant(Nat(2)))),
-                            Box::new(Statement::HeapUpdate(
-                                    "z".into(),
-                                    Expr::NatAdd(
-                                        Box::new(Expr::HeapRead("x".into())),
-                                        Box::new(Expr::HeapRead("z".into())),
-                                    ),
-                            )),
+                Box::new(Statement::Sequence(
+                    Box::new(Statement::HeapNew("z".into(), Expr::Constant(Nat(2)))),
+                    Box::new(Statement::HeapUpdate(
+                        "z".into(),
+                        Expr::NatAdd(
+                            Box::new(Expr::HeapRead("x".into())),
+                            Box::new(Expr::HeapRead("z".into())),
+                        ),
                     )),
-                    Box::new(Statement::Conditional(
-                            Expr::NatLeq(
-                                Box::new(Expr::HeapRead("x".into())),
-                                Box::new(Expr::Constant(Nat(0))),
-                            ),
-                            Box::new(Statement::HeapNew("y".into(), Expr::HeapRead("z".into()))),
-                            Box::new(Statement::HeapNew("y".into(), Expr::Constant(Nat(4)))),
-                    )),
+                )),
+                Box::new(Statement::Conditional(
+                    Expr::NatLeq(
+                        Box::new(Expr::HeapRead("x".into())),
+                        Box::new(Expr::Constant(Nat(0))),
+                    ),
+                    Box::new(Statement::HeapNew("y".into(), Expr::HeapRead("z".into()))),
+                    Box::new(Statement::HeapNew("y".into(), Expr::Constant(Nat(4)))),
+                )),
             )),
-            );
+        );
         typecheck(&program)
     }
 }
