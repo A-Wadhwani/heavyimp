@@ -78,7 +78,7 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
     match ast {
         Statement::StoreAssign(id, expr) => {
             let expr_ty = typecheck_expr_aux(sigma, expr)?;
-            expect_name_ty(Type::Number, id, &sigma)?;
+            expect_name_ty(Type::Number, id, sigma)?;
             expect_ty(Type::Number, expr_ty).and_then(|_| {
                 sigma.insert(id.clone(), Type::Number);
                 Ok(())
@@ -86,7 +86,7 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
         }
         Statement::HeapNew(id, expr) => {
             let expr_ty = typecheck_expr_aux(sigma, expr)?;
-            expect_name_ty(Type::Location, id, &sigma)?;
+            expect_name_ty(Type::Location, id, sigma)?;
             expect_ty(Type::Number, expr_ty).and_then(|_| {
                 sigma.insert(id.clone(), Type::Location);
                 Ok(())

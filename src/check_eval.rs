@@ -10,6 +10,7 @@ use quickcheck::{empty_shrinker, Arbitrary, Gen, TestResult};
 lazy_static! {
     static ref STORE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
     static ref HEAP: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+    static ref TOGGLE_RANDOM: Mutex<bool> = Mutex::new(false);
 }
 
 // Quick Checking for the Evaluator
@@ -23,7 +24,6 @@ impl Constant {
         Bool(bool::arbitrary(g))
     }
 
-    #[cfg(not(tarpaulin_include))]
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
             Nat(n) => Box::new(n.shrink().map(Nat)),
@@ -90,7 +90,6 @@ impl Expr {
         res
     }
 
-    #[cfg(not(tarpaulin_include))]
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
             Self::StoreRead(_) => empty_shrinker(),
@@ -116,8 +115,6 @@ impl Expr {
                 for e2 in e2.shrink() {
                     shrinks.push(Self::NatLeq(e1.clone(), Box::new(e2)));
                 }
-                shrinks.push(*e1.clone());
-                shrinks.push(*e2.clone());
                 Box::new(shrinks.into_iter())
             }
             Self::BoolAnd(e1, e2) => {
@@ -156,7 +153,6 @@ impl Arbitrary for Statement {
         stmnt
     }
 
-    #[cfg(not(tarpaulin_include))]
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
             Self::StoreAssign(id, expr) => {
@@ -258,16 +254,16 @@ impl Statement {
                 let sets = clone_sets();
                 let cond = Expr::arbitrary_bool(g);
                 let then_e = Self::generate_stmnts(g);
-                restore_sets(&sets);
+                restore_sets(&sets, g);
                 let else_e = Self::generate_stmnts(g);
-                restore_sets(&sets);
+                restore_sets(&sets, g);
                 Self::Conditional(cond, Box::new(then_e), Box::new(else_e))
             }
             91..=100 => {
                 let sets = clone_sets();
                 let cond = Expr::arbitrary_bool(g);
                 let do_e = Self::generate_stmnts(g);
-                restore_sets(&sets);
+                restore_sets(&sets, g);
                 Self::While(cond, Box::new(do_e))
             }
             _ => Self::Skip,
@@ -293,9 +289,11 @@ fn clone_sets() -> (HashSet<String>, HashSet<String>) {
     (STORE.lock().unwrap().clone(), HEAP.lock().unwrap().clone())
 }
 
-fn restore_sets(set: &(HashSet<String>, HashSet<String>)) {
-    STORE.lock().unwrap().clone_from(&set.0);
-    HEAP.lock().unwrap().clone_from(&set.1);
+fn restore_sets(set: &(HashSet<String>, HashSet<String>), g: &mut Gen) {
+    if !random(g) {
+        STORE.lock().unwrap().clone_from(&set.0);
+        HEAP.lock().unwrap().clone_from(&set.1);
+    }
 }
 
 // A cleaner to read string
@@ -309,11 +307,15 @@ fn arbitrary_ident(g: &mut Gen, store: bool) -> String {
         return random_heap(g).unwrap_or_else(|| arbitrary_ident(g, store));
     }
 
-    let mut i = u8::arbitrary(g) % 5 + 4;
+    let mut i = u8::arbitrary(g) % 20 + 20;
     while i > 0 {
         // Just letters
         s.push(char::from(b'a' + u8::arbitrary(g) % 26));
         i -= 1;
+    }
+
+    if STORE.lock().unwrap().contains(&s) || HEAP.lock().unwrap().contains(&s) {
+        return arbitrary_ident(g, store);
     }
     if store && !random(g) {
         STORE.lock().unwrap().insert(s.clone());
@@ -343,10 +345,11 @@ fn random_heap(g: &mut Gen) -> Option<String> {
 
 // Determines how likely it is to generate a faulty program (needs to be a very tiny number)
 fn random(g: &mut Gen) -> bool {
-    u64::arbitrary(g) % 1_000_000 == 0
+    *TOGGLE_RANDOM.lock().unwrap() && u64::arbitrary(g) % 1_000_000_000 == 0
 }
 
-pub fn quick_check(stmnt: Statement) -> TestResult {
+/// Ensures when the typechecker passes, the program also passes
+pub fn quick_check_error(stmnt: Statement) -> TestResult {
     let typecheck = typecheck(&stmnt);
     let evaluated = eval_program(&stmnt);
 
@@ -364,4 +367,32 @@ pub fn quick_check(stmnt: Statement) -> TestResult {
     } else {
         TestResult::passed()
     }
+}
+
+/// Ensures that the typechecker does not fail on any valid program
+pub fn quick_check_correct(stmnt: Statement) -> TestResult {
+    let typecheck = typecheck(&stmnt);
+    let evaluated = eval_program(&stmnt);
+
+    if typecheck.is_err() {
+        println!(
+            "{:?} typecheck error on {:?}\n",
+            typecheck.unwrap_err(),
+            stmnt
+        );
+        TestResult::failed()
+    } else if evaluated.is_err() {
+        println!(
+            "{:?} evaluation error on {:?}\n",
+            evaluated.unwrap_err(),
+            stmnt
+        );
+        TestResult::failed()
+    } else {
+        TestResult::passed()
+    }
+}
+
+pub fn toggle_random(enable: bool) {
+    *TOGGLE_RANDOM.lock().unwrap() = enable;
 }
