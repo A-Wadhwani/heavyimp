@@ -349,7 +349,7 @@ fn random(g: &mut Gen) -> bool {
 }
 
 /// Ensures when the typechecker passes, the program also passes
-pub fn quick_check_error(stmnt: Statement) -> TestResult {
+pub fn check_type_eval(stmnt: Statement) -> TestResult {
     let typecheck = typecheck(&stmnt);
     let evaluated = eval_program(&stmnt);
 
@@ -370,7 +370,7 @@ pub fn quick_check_error(stmnt: Statement) -> TestResult {
 }
 
 /// Ensures that the typechecker does not fail on any valid program
-pub fn quick_check_correct(stmnt: Statement) -> TestResult {
+pub fn check_correct(stmnt: Statement) -> TestResult {
     let typecheck = typecheck(&stmnt);
     let evaluated = eval_program(&stmnt);
 
@@ -390,6 +390,32 @@ pub fn quick_check_correct(stmnt: Statement) -> TestResult {
         TestResult::failed()
     } else {
         TestResult::passed()
+    }
+}
+
+/// Ensures that if the evaluation fails, the typechecker also fails
+pub fn check_eval_type(stmnt: Statement) -> TestResult {
+    let typecheck = typecheck(&stmnt);
+    let evaluated = eval_program(&stmnt);
+
+    if typecheck.is_err() && evaluated.is_err() {
+        TestResult::passed()
+    } else if typecheck.is_err() {
+        println!(
+            "{:?} typecheck error on {:?}\n",
+            typecheck.unwrap_err(),
+            stmnt
+        );
+        TestResult::failed()
+    } else if evaluated.is_err() {
+        println!(
+            "{:?} evaluation error on {:?}\n",
+            evaluated.unwrap_err(),
+            stmnt
+        );
+        TestResult::failed()
+    } else {
+        TestResult::discard()
     }
 }
 

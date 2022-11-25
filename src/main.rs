@@ -1,4 +1,4 @@
-use check_eval::{quick_check_correct, quick_check_error, toggle_random};
+use check_eval::{check_correct, check_eval_type, check_type_eval, toggle_random};
 use quickcheck::{Gen, TestResult};
 use syntax::Statement;
 
@@ -19,14 +19,22 @@ fn main() {
         .tests(4000)
         .max_tests(100000)
         .gen(Gen::new(15))
-        .quickcheck(quick_check_error as fn(Statement) -> TestResult);
+        .quickcheck(check_type_eval as fn(Statement) -> TestResult);
     // Check if the evaluator and type-checker do not throw errors on correct programs
     toggle_random(false);
     quickcheck::QuickCheck::new()
         .tests(30000)
         .max_tests(30000)
-        .gen(Gen::new(35))
-        .quickcheck(quick_check_correct as fn(Statement) -> TestResult);
+        .gen(Gen::new(65))
+        .quickcheck(check_correct as fn(Statement) -> TestResult);
+    // Check if the type-checker *does* throw an error, given that the evaluator fails
+    toggle_random(true);
+    quickcheck::QuickCheck::new()
+        .min_tests_passed(20000)
+        .tests(30000)
+        .max_tests(30000)
+        .gen(Gen::new(65))
+        .quickcheck(check_eval_type as fn(Statement) -> TestResult);
 }
 
 #[cfg(test)]
