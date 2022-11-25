@@ -400,13 +400,6 @@ pub fn check_eval_type(stmnt: Statement) -> TestResult {
 
     if typecheck.is_err() && evaluated.is_err() {
         TestResult::passed()
-    } else if typecheck.is_err() {
-        println!(
-            "{:?} typecheck error on {:?}\n",
-            typecheck.unwrap_err(),
-            stmnt
-        );
-        TestResult::failed()
     } else if evaluated.is_err() {
         println!(
             "{:?} evaluation error on {:?}\n",
