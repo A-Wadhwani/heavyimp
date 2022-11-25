@@ -410,7 +410,9 @@ pub fn check_eval_type(stmnt: Statement) -> TestResult {
             stmnt
         );
         TestResult::failed()
-    } else /* evaluated.is_ok() */ {
+    } else
+    /* evaluated.is_ok() */
+    {
         TestResult::discard()
     }
 }
@@ -446,4 +448,4 @@ fn quick_check() {
         .max_tests(30000)
         .gen(Gen::new(65))
         .quickcheck(check_eval_type as fn(Statement) -> TestResult);
-    }
+}

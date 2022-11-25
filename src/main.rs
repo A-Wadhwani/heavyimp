@@ -1,8 +1,8 @@
-mod test;
 pub mod error;
 pub mod evaluator;
 pub mod parser;
 pub mod syntax;
+mod test;
 pub mod typechecker;
 
 fn main() {

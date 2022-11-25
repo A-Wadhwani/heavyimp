@@ -17,8 +17,9 @@ lazy_static! {
         use pest::pratt_parser::{Assoc::*, Op};
 
         PrattParser::new()
-            .op(Op::infix(Rule::less, Left))
             .op(Op::infix(Rule::add, Left))
+            .op(Op::infix(Rule::less, Left))
+            .op(Op::prefix(Rule::not))
     };
 }
 
@@ -100,7 +101,7 @@ pub fn build_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
         }
         Rule::ident => Expr::StoreRead(pair.as_str().to_string()),
         Rule::deref_ident => Expr::HeapRead(pair.as_str().strip_prefix('*').unwrap().to_string()),
-        Rule::binary_expr | Rule::unary_expr => PRATT_PARSER
+        Rule::compound_expr => PRATT_PARSER
             .map_primary(|primary| build_expr(primary))
             .map_prefix(|op, rhs| match op.as_rule() {
                 Rule::not => Expr::BoolNot(Box::new(rhs)),
@@ -113,5 +114,69 @@ pub fn build_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
             })
             .parse(pair.into_inner()),
         _ => panic!("{:?}", pair.as_rule()),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use pest::Parser;
+
+    use crate::syntax::{
+        Constant::*,
+        Expr::{self, *},
+        Statement::*,
+    };
+
+    fn parse_expr(source: &str) -> Expr {
+        let pairs = super::ImpParser::parse(super::Rule::expr, source)
+            .unwrap()
+            .next()
+            .unwrap();
+        super::build_expr(pairs)
+    }
+
+    #[test]
+    fn test_expr_basic() {
+        let s = "~5 + *x + true";
+        let ex = NatAdd(
+            Box::new(NatAdd(
+                Box::new(BoolNot(Box::new(Constant(Nat(5))))),
+                Box::new(HeapRead("x".to_string())),
+            )),
+            Box::new(Constant(Bool(true))),
+        );
+
+        assert_eq!(parse_expr(s), ex);
+    }
+
+    #[test]
+    fn test_stmnt_basic() {
+        let source = std::fs::read_to_string("examples/test_file.imp").unwrap();
+        let parsed = super::parse(&source).unwrap();
+
+        let stmt = Sequence(
+            Box::new(Sequence(
+                Box::new(Sequence(
+                    Box::new(Skip),
+                    Box::new(HeapNew("x".to_string(), Constant(Nat(0)))),
+                )),
+                Box::new(StoreAssign("inc".to_string(), Constant(Nat(25)))),
+            )),
+            Box::new(While(
+                NatLeq(
+                    Box::new(HeapRead("x".to_string())),
+                    Box::new(Constant(Nat(100))),
+                ),
+                Box::new(HeapUpdate(
+                    "x".to_string(),
+                    NatAdd(
+                        Box::new(HeapRead("x".to_string())),
+                        Box::new(StoreRead("inc".to_string())),
+                    ),
+                )),
+            )),
+        );
+
+        assert_eq!(parsed, stmt);
     }
 }

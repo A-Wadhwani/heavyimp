@@ -12,9 +12,8 @@ not = { "~" }
 binary_operator = _{ add | less }
 unary_operator = _{ not }
 term = _{ number | boolean | deref_ident | ident }
-unary_expr = { unary_operator ~ expr }
-binary_expr = { term ~ (binary_operator ~ term)* }
-expr = { unary_expr | binary_expr | term }
+compound_expr = { unary_operator* ~ term ~ (binary_operator ~ unary_operator* ~ term)* }
+expr = { compound_expr | term }
 
 store_assign = { "let" ~ ident ~ "=" ~ expr }
 heap_new = { "let" ~ ident ~ "<-" ~ expr }
