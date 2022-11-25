@@ -169,13 +169,12 @@ impl Arbitrary for Statement {
             Self::Sequence(e1, e2) => {
                 let mut shrinks = Vec::new();
                 for e1 in e1.shrink() {
-                    shrinks.push(Self::Sequence(e1, e2.clone()));
+                    shrinks.push(*e1);
                 }
                 for e2 in e2.shrink() {
                     shrinks.push(Self::Sequence(e1.clone(), e2));
                 }
                 shrinks.push(*e1.clone());
-                shrinks.push(*e2.clone());
                 Box::new(shrinks.into_iter())
             }
             Self::Conditional(expr, then_e, else_e) => {
@@ -308,35 +307,24 @@ fn random_heap(g: &mut Gen) -> Option<String> {
 pub fn quick_check(stmnt: Statement) -> TestResult {
     let typecheck = typecheck(&stmnt);
     let evaluated = eval_program(&stmnt);
-    if evaluated.is_err() {
+
+    if typecheck.is_err() {
         println!(
             "{:?} typecheck error on {:?}\n",
+            typecheck.unwrap_err(),
+            stmnt
+        );
+        TestResult::failed()
+    } else if evaluated.is_err() {
+        println!(
+            "{:?} evaluation error on {:?}\n",
             evaluated.unwrap_err(),
             stmnt
         );
         TestResult::failed()
     } else {
-        println!("Passed typecheck: {:?}\n", stmnt);
+        println!("typecheck and evaluation pass on: {:?}\n", stmnt);
         TestResult::passed()
     }
-    // if typecheck.is_err() {
-    //     println!(
-    //         "{:?} typecheck error on {:?}\n",
-    //         typecheck.unwrap_err(),
-    //         stmnt
-    //     );
-    //     TestResult::discard()
-    // } else {
-    //     // Given the typecheck passed, the evaluation should not fail
-    //     if evaluated.is_err() {
-    //         println!(
-    //             "{:?} evaluation error on {:?}\n",
-    //             evaluated.unwrap_err(),
-    //             stmnt
-    //         );
-    //         TestResult::failed()
-    //     } else {
-    //         TestResult::passed()
-    //     }
-    // }
+
 }
