@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::error::{EvalError::*, EvalResult};
 use crate::syntax::{Constant::*, *};
+use crate::typechecker::Type::*;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Value {
@@ -24,7 +25,10 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
         // Read from the store, and return if it's a constant
         Expr::StoreRead(x) => store.get(x).ok_or(UnboundVariable).and_then(|v| match v {
             Value::Number(i) => Ok(Nat(*i)),
-            Value::Location(_) => Err(TypeMismatch),
+            Value::Location(_) => Err(TypeMismatch {
+                expected: Number,
+                got: Location,
+            }),
         }),
         // Get the location from the store, and read from the heap
         Expr::HeapRead(x) => {
@@ -41,7 +45,10 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
             match (a, b) {
                 // Addition might overflow, so we need to check for that
                 (Nat(a), Nat(b)) => Ok(Nat(a.checked_add(b).unwrap_or(0))),
-                _ => Err(TypeMismatch),
+                _ => Err(TypeMismatch {
+                    expected: Number,
+                    got: Boolean,
+                }),
             }
         }
         Expr::NatLeq(a, b) => {
@@ -49,7 +56,10 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
             let b = eval_expr(b, store, heap)?;
             match (a, b) {
                 (Nat(a), Nat(b)) => Ok(Bool(a <= b)),
-                _ => Err(TypeMismatch),
+                _ => Err(TypeMismatch {
+                    expected: Number,
+                    got: Boolean,
+                }),
             }
         }
         Expr::BoolAnd(a, b) => {
@@ -57,14 +67,20 @@ fn eval_expr(expr: &Expr, store: &Sigma, heap: &Heap) -> EvalResult<Constant> {
             let b = eval_expr(b, store, heap)?;
             match (a, b) {
                 (Bool(a), Bool(b)) => Ok(Bool(a && b)),
-                _ => Err(TypeMismatch),
+                _ => Err(TypeMismatch {
+                    expected: Boolean,
+                    got: Number,
+                }),
             }
         }
         Expr::BoolNot(a) => {
             let a = eval_expr(a, store, heap)?;
             match a {
                 Bool(a) => Ok(Bool(!a)),
-                _ => Err(TypeMismatch),
+                _ => Err(TypeMismatch {
+                    expected: Boolean,
+                    got: Number,
+                }),
             }
         }
     }
@@ -115,7 +131,10 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             match value {
                 Bool(true) => eval_stmnt(then_s, store, heap),
                 Bool(false) => eval_stmnt(else_s, store, heap),
-                _ => Err(TypeMismatch),
+                _ => Err(TypeMismatch {
+                    expected: Boolean,
+                    got: Number,
+                }),
             }
         }
         Statement::While(expr, loop_s) => {
@@ -133,7 +152,10 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
             if matches!(value, Bool(_)) {
                 Ok(())
             } else {
-                Err(TypeMismatch)
+                Err(TypeMismatch {
+                    expected: Boolean,
+                    got: Number,
+                })
             }
         }
         Statement::Skip => Ok(()),
@@ -143,13 +165,19 @@ fn eval_stmnt(stmnt: &Statement, store: &mut Sigma, heap: &mut Heap) -> EvalResu
 const fn get_nat(c: Constant) -> EvalResult<i64> {
     match c {
         Nat(i) => Ok(i),
-        Bool(_) => Err(TypeMismatch),
+        Bool(_) => Err(TypeMismatch {
+            expected: Number,
+            got: Boolean,
+        }),
     }
 }
 
 const fn get_loc(v: &Value) -> EvalResult<usize> {
     match v {
-        Value::Number(_) => Err(TypeMismatch),
+        Value::Number(_) => Err(TypeMismatch {
+            expected: Location,
+            got: Number,
+        }),
         Value::Location(l) => Ok(*l),
     }
 }

@@ -100,6 +100,7 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
         }
         Statement::HeapAlias(alias, id) => {
             let stored_ty = sigma.get(id).ok_or(TypeError::UnboundVariable)?;
+            expect_name_ty(Type::Location, alias, sigma)?;
             expect_ty(Type::Location, *stored_ty).and_then(|_| {
                 sigma.insert(alias.clone(), Type::Location);
                 Ok(())
@@ -111,12 +112,16 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
         }
         Statement::Conditional(cond, then, els) => {
             expect_expr_ty(Type::Boolean, cond, sigma)?;
-            typecheck_stmt_aux(sigma, then)?;
-            typecheck_stmt_aux(sigma, els)
+            // The variables bound in the then and else branches are disjoint and don't leak out.
+            let mut then_sigma = sigma.clone();
+            let mut els_sigma = sigma.clone();
+            typecheck_stmt_aux(&mut then_sigma, then)?;
+            typecheck_stmt_aux(&mut els_sigma, els)
         }
         Statement::While(cond, luup) => {
             expect_expr_ty(Type::Boolean, cond, sigma)?;
-            typecheck_stmt_aux(sigma, luup)
+            let mut luup_sigma = sigma.clone();
+            typecheck_stmt_aux(&mut luup_sigma, luup)
         }
         Statement::Skip => Ok(()),
     }
@@ -153,5 +158,54 @@ mod test {
             )),
         );
         typecheck(&program)
+    }
+
+    #[test]
+    fn basic_test2() {
+        let program = Statement::Sequence(
+            Box::new(Statement::Sequence(
+                Box::new(Statement::Sequence(
+                    Box::new(Statement::Sequence(
+                        Box::new(Statement::Sequence(
+                            Box::new(Statement::Sequence(
+                                Box::new(Statement::Skip),
+                                Box::new(Statement::StoreAssign(
+                                    "x1".into(),
+                                    Expr::Constant(Nat(13)),
+                                )),
+                            )),
+                            Box::new(Statement::Skip),
+                        )),
+                        Box::new(Statement::HeapNew(
+                            "x2".into(),
+                            Expr::StoreRead("x1".into()),
+                        )),
+                    )),
+                    Box::new(Statement::Conditional(
+                        Expr::BoolNot(Box::new(Expr::Constant(Bool(true)))),
+                        Box::new(Statement::While(
+                            Expr::BoolAnd(
+                                Box::new(Expr::BoolAnd(
+                                    Box::new(Expr::Constant(Bool(false))),
+                                    Box::new(Expr::Constant(Bool(true))),
+                                )),
+                                Box::new(Expr::Constant(Bool(true))),
+                            ),
+                            Box::new(Statement::StoreAssign(
+                                "x4".into(),
+                                Expr::StoreRead("x1".into()),
+                            )),
+                        )),
+                        Box::new(Statement::HeapAlias("x1".into(), "x2".into())),
+                    )),
+                )),
+                Box::new(Statement::HeapNew("x3".into(), Expr::Constant(Nat(117)))),
+            )),
+            Box::new(Statement::HeapUpdate(
+                "x2".into(),
+                Expr::StoreRead("x1".into()),
+            )),
+        );
+        typecheck(&program).unwrap_err();
     }
 }
