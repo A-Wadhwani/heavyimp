@@ -14,8 +14,19 @@ extern crate lazy_static;
 fn main() {
     // Check if the evaluator does not throw an error, given that the type-checker passes
     quickcheck::QuickCheck::new()
+        .min_tests_passed(500)
         .tests(500)
-        .max_tests(5000000)
-        .gen(Gen::new(100))
+        .max_tests(100000)
+        .gen(Gen::new(20))
         .quickcheck(quick_check as fn(Statement) -> TestResult);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::main;
+
+    #[test]
+    fn quick_check() {
+        main();
+    }
 }

@@ -1,7 +1,7 @@
-use std::{any::type_name, collections::HashSet, sync::Mutex};
+use std::{collections::HashSet, sync::Mutex};
 
 use crate::{
-    evaluator::{self, eval_program},
+    evaluator::eval_program,
     syntax::{Constant, Constant::*, Expr, Statement},
     typechecker::typecheck,
 };
@@ -23,6 +23,7 @@ impl Constant {
         Bool(bool::arbitrary(g))
     }
 
+    #[cfg(not(tarpaulin_include))]
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
             Nat(n) => Box::new(n.shrink().map(Nat)),
@@ -34,6 +35,9 @@ impl Constant {
 impl Expr {
     // Generate a nat expression
     fn arbitrary_nat(g: &mut Gen) -> Self {
+        if random(g) {
+            return Self::arbitrary_bool(g);
+        }
         let constant = Self::Constant(Constant::arbitrary_int(g));
         match u8::arbitrary(g) % 4 {
             0 => random_store(g).map_or(constant, Self::StoreRead),
@@ -48,6 +52,9 @@ impl Expr {
     }
 
     fn arbitrary_bool(g: &mut Gen) -> Self {
+        if random(g) {
+            return Self::arbitrary_nat(g);
+        }
         match u8::arbitrary(g) % 4 {
             0 => Self::NatLeq(
                 Box::new(Self::arbitrary_nat(g)),
@@ -64,6 +71,9 @@ impl Expr {
     }
 
     fn arbitrary_store(g: &mut Gen, s: &String) -> Self {
+        if random(g) {
+            return Self::arbitrary_heap(g, s);
+        }
         STORE.lock().unwrap().remove(s);
         let res = Self::arbitrary_nat(g);
         STORE.lock().unwrap().insert(s.clone());
@@ -71,12 +81,16 @@ impl Expr {
     }
 
     fn arbitrary_heap(g: &mut Gen, s: &String) -> Self {
+        if random(g) {
+            return Self::arbitrary_heap(g, s);
+        }
         HEAP.lock().unwrap().remove(s);
         let res = Self::arbitrary_nat(g);
         HEAP.lock().unwrap().insert(s.clone());
         res
     }
 
+    #[cfg(not(tarpaulin_include))]
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
             Self::StoreRead(_) => empty_shrinker(),
@@ -135,13 +149,14 @@ impl Arbitrary for Statement {
         STORE.lock().unwrap().clear();
         HEAP.lock().unwrap().clear();
         let mut stmnt = Self::generate_stmnts(g);
-        // Ensure we have a statment of big-enough size
+        // Ensure we have a statment of big enough size
         while stmnt.size() < g.size() {
             stmnt = Self::Sequence(Box::new(stmnt), Box::new(Self::generate_stmnts(g)));
         }
         stmnt
     }
 
+    #[cfg(not(tarpaulin_include))]
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
             Self::StoreAssign(id, expr) => {
@@ -248,7 +263,13 @@ impl Statement {
                 restore_sets(&sets);
                 Self::Conditional(cond, Box::new(then_e), Box::new(else_e))
             }
-            // 91..=100 => Self::While(Expr::arbitrary_bool(g), Box::new(Self::generate_stmnts(g))),
+            91..=100 => {
+                let sets = clone_sets();
+                let cond = Expr::arbitrary_bool(g);
+                let do_e = Self::generate_stmnts(g);
+                restore_sets(&sets);
+                Self::While(cond, Box::new(do_e))
+            }
             _ => Self::Skip,
         }
     }
@@ -281,6 +302,12 @@ fn restore_sets(set: &(HashSet<String>, HashSet<String>)) {
 fn arbitrary_ident(g: &mut Gen, store: bool) -> String {
     let mut s = String::new();
     // Occasionally use a random reference
+    if random(g) {
+        return random_heap(g).unwrap_or_else(|| arbitrary_ident(g, store));
+    }
+    if random(g) {
+        return random_heap(g).unwrap_or_else(|| arbitrary_ident(g, store));
+    }
 
     let mut i = u8::arbitrary(g) % 5 + 4;
     while i > 0 {
@@ -288,20 +315,35 @@ fn arbitrary_ident(g: &mut Gen, store: bool) -> String {
         s.push(char::from(b'a' + u8::arbitrary(g) % 26));
         i -= 1;
     }
-    if store {
+    if store && !random(g) {
         STORE.lock().unwrap().insert(s.clone());
-    } else {
+    } else if !random(g) {
         HEAP.lock().unwrap().insert(s.clone());
     }
     s
 }
 
 fn random_store(g: &mut Gen) -> Option<String> {
-    Some((*g.choose(&STORE.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
+    if random(g) {
+        Some(arbitrary_ident(g, true))
+    } else {
+        Some((*g.choose(&STORE.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
+    }
 }
 
 fn random_heap(g: &mut Gen) -> Option<String> {
-    Some((*g.choose(&HEAP.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
+    if random(g) {
+        Some(arbitrary_ident(g, true))
+    } else if random(g) {
+        random_store(g)
+    } else {
+        Some((*g.choose(&HEAP.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
+    }
+}
+
+// Determines how likely it is to generate a faulty program (needs to be a very tiny number)
+fn random(g: &mut Gen) -> bool {
+    (u64::arbitrary(g) % 1_000_000_000_000) == 0
 }
 
 pub fn quick_check(stmnt: Statement) -> TestResult {
@@ -309,12 +351,7 @@ pub fn quick_check(stmnt: Statement) -> TestResult {
     let evaluated = eval_program(&stmnt);
 
     if typecheck.is_err() {
-        println!(
-            "{:?} typecheck error on {:?}\n",
-            typecheck.unwrap_err(),
-            stmnt
-        );
-        TestResult::failed()
+        TestResult::discard()
     } else if evaluated.is_err() {
         println!(
             "{:?} evaluation error on {:?}\n",
@@ -323,8 +360,6 @@ pub fn quick_check(stmnt: Statement) -> TestResult {
         );
         TestResult::failed()
     } else {
-        println!("typecheck and evaluation pass on: {:?}\n", stmnt);
         TestResult::passed()
     }
-
 }

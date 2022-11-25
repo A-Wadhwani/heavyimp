@@ -31,6 +31,15 @@ fn expect_expr_ty(
     expect_ty(expected, expr_ty)
 }
 
+fn expect_name_ty(
+    expected: Type,
+    name: &str,
+    sigma: &HashMap<String, Type>,
+) -> Result<Type, TypeError> {
+    let name_ty = sigma.get(name).unwrap_or(&expected);
+    expect_ty(expected, *name_ty)
+}
+
 fn typecheck_expr_aux(sigma: &HashMap<String, Type>, ast: &Expr) -> Result<Type, TypeError> {
     match ast {
         Expr::StoreRead(x) => {
@@ -69,6 +78,7 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
     match ast {
         Statement::StoreAssign(id, expr) => {
             let expr_ty = typecheck_expr_aux(sigma, expr)?;
+            expect_name_ty(Type::Number, id, &sigma)?;
             expect_ty(Type::Number, expr_ty).and_then(|_| {
                 sigma.insert(id.clone(), Type::Number);
                 Ok(())
@@ -76,6 +86,7 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
         }
         Statement::HeapNew(id, expr) => {
             let expr_ty = typecheck_expr_aux(sigma, expr)?;
+            expect_name_ty(Type::Location, id, &sigma)?;
             expect_ty(Type::Number, expr_ty).and_then(|_| {
                 sigma.insert(id.clone(), Type::Location);
                 Ok(())
