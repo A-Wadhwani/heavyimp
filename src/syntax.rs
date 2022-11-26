@@ -1,12 +1,12 @@
 pub type Ident = String;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Constant {
     Nat(i64),
     Bool(bool),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     StoreRead(Ident),
     HeapRead(Ident),
@@ -17,7 +17,7 @@ pub enum Expr {
     BoolNot(Box<Expr>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
     StoreAssign(Ident, Expr),
     HeapNew(Ident, Expr),

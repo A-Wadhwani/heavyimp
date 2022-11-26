@@ -1,3 +1,4 @@
+#![cfg(test)]
 use std::{collections::HashSet, sync::Mutex};
 
 use crate::{
@@ -6,6 +7,8 @@ use crate::{
     typechecker::typecheck,
 };
 use quickcheck::{empty_shrinker, Arbitrary, Gen, TestResult};
+
+use lazy_static::lazy_static;
 
 lazy_static! {
     static ref STORE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
@@ -400,18 +403,49 @@ pub fn check_eval_type(stmnt: Statement) -> TestResult {
 
     if typecheck.is_err() && evaluated.is_err() {
         TestResult::passed()
-    } else if evaluated.is_err() {
+    } else if evaluated.is_err() && typecheck.is_ok() {
         println!(
-            "{:?} evaluation error on {:?}\n",
+            "{:?} typecheck validated incorrect program: {:?}\n",
             evaluated.unwrap_err(),
             stmnt
         );
         TestResult::failed()
-    } else {
+    } else
+    /* evaluated.is_ok() */
+    {
         TestResult::discard()
     }
 }
 
 pub fn toggle_random(enable: bool) {
     *TOGGLE_RANDOM.lock().unwrap() = enable;
+}
+
+#[test]
+fn quick_check() {
+    // Check if the evaluator does not throw an error, given that the type-checker passes
+    toggle_random(true);
+    quickcheck::QuickCheck::new()
+        .min_tests_passed(500)
+        .tests(4000)
+        .max_tests(100000)
+        .gen(Gen::new(15))
+        .quickcheck(check_type_eval as fn(Statement) -> TestResult);
+
+    // Check if the evaluator and type-checker do not throw errors on correct programs
+    toggle_random(false);
+    quickcheck::QuickCheck::new()
+        .tests(30000)
+        .max_tests(30000)
+        .gen(Gen::new(65))
+        .quickcheck(check_correct as fn(Statement) -> TestResult);
+
+    // Check if the type-checker *does* throw an error, given that the evaluator fails
+    toggle_random(true);
+    quickcheck::QuickCheck::new()
+        .min_tests_passed(20000)
+        .tests(30000)
+        .max_tests(30000)
+        .gen(Gen::new(65))
+        .quickcheck(check_eval_type as fn(Statement) -> TestResult);
 }

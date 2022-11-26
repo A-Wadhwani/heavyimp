@@ -9,3 +9,5 @@ edition = "2021"
 [dependencies]
 lazy_static = "1.4.0"
 quickcheck = "1"
+pest = "2.5.0"
+pest_derive = "2.5.0"
