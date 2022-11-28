@@ -11,8 +11,6 @@ use quickcheck::{empty_shrinker, Arbitrary, Gen, TestResult};
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref STORE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
-    static ref HEAP: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
     static ref TOGGLE_RANDOM: Mutex<bool> = Mutex::new(false);
 }
 
@@ -37,59 +35,73 @@ impl Constant {
 
 impl Expr {
     // Generate a nat expression
-    fn arbitrary_nat(g: &mut Gen) -> Self {
+    fn arbitrary_nat(g: &mut Gen, store: &mut HashSet<String>, heap: &mut HashSet<String>) -> Self {
         if random(g) {
-            return Self::arbitrary_bool(g);
+            return Self::arbitrary_bool(g, store, heap);
         }
         let constant = Self::Constant(Constant::arbitrary_int(g));
         match u8::arbitrary(g) % 4 {
-            0 => random_store(g).map_or(constant, Self::StoreRead),
-            1 => random_heap(g).map_or(constant, Self::HeapRead),
+            0 => random_store(g, store, heap).map_or(constant, Self::StoreRead),
+            1 => random_heap(g, store, heap).map_or(constant, Self::HeapRead),
             2 => constant,
             3 => Self::NatAdd(
-                Box::new(Self::arbitrary_nat(g)),
-                Box::new(Self::arbitrary_nat(g)),
+                Box::new(Self::arbitrary_nat(g, store, heap)),
+                Box::new(Self::arbitrary_nat(g, store, heap)),
             ),
             _ => unreachable!(),
         }
     }
 
-    fn arbitrary_bool(g: &mut Gen) -> Self {
+    fn arbitrary_bool(
+        g: &mut Gen,
+        store: &mut HashSet<String>,
+        heap: &mut HashSet<String>,
+    ) -> Self {
         if random(g) {
-            return Self::arbitrary_nat(g);
+            return Self::arbitrary_nat(g, store, heap);
         }
         match u8::arbitrary(g) % 4 {
             0 => Self::NatLeq(
-                Box::new(Self::arbitrary_nat(g)),
-                Box::new(Self::arbitrary_nat(g)),
+                Box::new(Self::arbitrary_nat(g, store, heap)),
+                Box::new(Self::arbitrary_nat(g, store, heap)),
             ),
             1 => Self::BoolAnd(
-                Box::new(Self::arbitrary_bool(g)),
-                Box::new(Self::arbitrary_bool(g)),
+                Box::new(Self::arbitrary_bool(g, store, heap)),
+                Box::new(Self::arbitrary_bool(g, store, heap)),
             ),
-            2 => Self::BoolNot(Box::new(Self::arbitrary_bool(g))),
+            2 => Self::BoolNot(Box::new(Self::arbitrary_bool(g, store, heap))),
             3 => Self::Constant(Constant::arbitrary_bool(g)),
             _ => unreachable!(),
         }
     }
 
-    fn arbitrary_store(g: &mut Gen, s: &String) -> Self {
+    fn arbitrary_store(
+        g: &mut Gen,
+        s: &String,
+        store: &mut HashSet<String>,
+        heap: &mut HashSet<String>,
+    ) -> Self {
         if random(g) {
-            return Self::arbitrary_heap(g, s);
+            return Self::arbitrary_heap(g, s, store, heap);
         }
-        STORE.lock().unwrap().remove(s);
-        let res = Self::arbitrary_nat(g);
-        STORE.lock().unwrap().insert(s.clone());
+        store.remove(s);
+        let res = Self::arbitrary_nat(g, store, heap);
+        store.insert(s.clone());
         res
     }
 
-    fn arbitrary_heap(g: &mut Gen, s: &String) -> Self {
+    fn arbitrary_heap(
+        g: &mut Gen,
+        s: &String,
+        store: &mut HashSet<String>,
+        heap: &mut HashSet<String>,
+    ) -> Self {
         if random(g) {
-            return Self::arbitrary_heap(g, s);
+            return Self::arbitrary_heap(g, s, store, heap);
         }
-        HEAP.lock().unwrap().remove(s);
-        let res = Self::arbitrary_nat(g);
-        HEAP.lock().unwrap().insert(s.clone());
+        heap.remove(s);
+        let res = Self::arbitrary_nat(g, store, heap);
+        heap.insert(s.clone());
         res
     }
 
@@ -146,12 +158,15 @@ impl Expr {
 
 impl Arbitrary for Statement {
     fn arbitrary(g: &mut Gen) -> Self {
-        STORE.lock().unwrap().clear();
-        HEAP.lock().unwrap().clear();
-        let mut stmnt = Self::generate_stmnts(g);
+        let mut store = HashSet::new();
+        let mut heap = HashSet::new();
+        let mut stmnt = Self::generate_stmnts(g, &mut store, &mut heap);
         // Ensure we have a statment of big enough size
         while stmnt.size() < g.size() {
-            stmnt = Self::Sequence(Box::new(stmnt), Box::new(Self::generate_stmnts(g)));
+            stmnt = Self::Sequence(
+                Box::new(stmnt),
+                Box::new(Self::generate_stmnts(g, &mut store, &mut heap)),
+            );
         }
         stmnt
     }
@@ -223,50 +238,54 @@ impl Arbitrary for Statement {
 }
 
 impl Statement {
-    fn generate_stmnts(g: &mut Gen) -> Statement {
+    fn generate_stmnts(
+        g: &mut Gen,
+        store: &mut HashSet<String>,
+        heap: &mut HashSet<String>,
+    ) -> Statement {
         match u8::arbitrary(g) % 105 + 1 {
             1..=15 => {
-                let id = arbitrary_ident(g, true);
-                let expr = Expr::arbitrary_store(g, &id);
+                let id = arbitrary_ident(g, true, store, heap);
+                let expr = Expr::arbitrary_store(g, &id, store, heap);
                 Self::StoreAssign(id, expr)
             }
             16..=30 => {
-                let id = arbitrary_ident(g, false);
-                let expr = Expr::arbitrary_heap(g, &id);
+                let id = arbitrary_ident(g, false, store, heap);
+                let expr = Expr::arbitrary_heap(g, &id, store, heap);
                 Self::HeapNew(id, expr)
             }
-            31..=35 => match random_heap(g) {
+            31..=35 => match random_heap(g, store, heap) {
                 Some(r) => {
-                    let expr = Expr::arbitrary_heap(g, &r);
+                    let expr = Expr::arbitrary_heap(g, &r, store, heap);
                     Self::HeapUpdate(r, expr)
                 }
-                None => Self::generate_stmnts(g),
+                None => Self::generate_stmnts(g, store, heap),
             },
-            36..=45 => match random_heap(g) {
+            36..=45 => match random_heap(g, store, heap) {
                 Some(r) => {
-                    let alias = arbitrary_ident(g, false);
+                    let alias = arbitrary_ident(g, false, store, heap);
                     Self::HeapAlias(alias, r)
                 }
-                None => Self::generate_stmnts(g),
+                None => Self::generate_stmnts(g, store, heap),
             },
             46..=65 => Self::Sequence(
-                Box::new(Self::generate_stmnts(g)),
-                Box::new(Self::generate_stmnts(g)),
+                Box::new(Self::generate_stmnts(g, store, heap)),
+                Box::new(Self::generate_stmnts(g, store, heap)),
             ),
             66..=90 => {
-                let sets = clone_sets();
-                let cond = Expr::arbitrary_bool(g);
-                let then_e = Self::generate_stmnts(g);
-                restore_sets(&sets, g);
-                let else_e = Self::generate_stmnts(g);
-                restore_sets(&sets, g);
+                let sets = (store.clone(), heap.clone());
+                let cond = Expr::arbitrary_bool(g, store, heap);
+                let then_e = Self::generate_stmnts(g, store, heap);
+                (*store, *heap) = sets.clone();
+                let else_e = Self::generate_stmnts(g, store, heap);
+                (*store, *heap) = sets;
                 Self::Conditional(cond, Box::new(then_e), Box::new(else_e))
             }
             91..=100 => {
-                let sets = clone_sets();
-                let cond = Expr::arbitrary_bool(g);
-                let do_e = Self::generate_stmnts(g);
-                restore_sets(&sets, g);
+                let sets = (store.clone(), heap.clone());
+                let cond = Expr::arbitrary_bool(g, store, heap);
+                let do_e = Self::generate_stmnts(g, store, heap);
+                (*store, *heap) = sets;
                 Self::While(cond, Box::new(do_e))
             }
             _ => Self::Skip,
@@ -288,26 +307,22 @@ impl Statement {
     }
 }
 
-fn clone_sets() -> (HashSet<String>, HashSet<String>) {
-    (STORE.lock().unwrap().clone(), HEAP.lock().unwrap().clone())
-}
-
-fn restore_sets(set: &(HashSet<String>, HashSet<String>), g: &mut Gen) {
-    if !random(g) {
-        STORE.lock().unwrap().clone_from(&set.0);
-        HEAP.lock().unwrap().clone_from(&set.1);
-    }
-}
-
 // A cleaner to read string
-fn arbitrary_ident(g: &mut Gen, store: bool) -> String {
+fn arbitrary_ident(
+    g: &mut Gen,
+    is_store: bool,
+    store: &mut HashSet<String>,
+    heap: &mut HashSet<String>,
+) -> String {
     let mut s = String::new();
     // Occasionally use a random reference
     if random(g) {
-        return random_heap(g).unwrap_or_else(|| arbitrary_ident(g, store));
+        return random_heap(g, store, heap)
+            .unwrap_or_else(|| arbitrary_ident(g, is_store, store, heap));
     }
     if random(g) {
-        return random_heap(g).unwrap_or_else(|| arbitrary_ident(g, store));
+        return random_heap(g, store, heap)
+            .unwrap_or_else(|| arbitrary_ident(g, is_store, store, heap));
     }
 
     let mut i = u8::arbitrary(g) % 20 + 20;
@@ -317,32 +332,40 @@ fn arbitrary_ident(g: &mut Gen, store: bool) -> String {
         i -= 1;
     }
 
-    if STORE.lock().unwrap().contains(&s) || HEAP.lock().unwrap().contains(&s) {
-        return arbitrary_ident(g, store);
+    if store.contains(&s) || heap.contains(&s) {
+        return arbitrary_ident(g, is_store, store, heap);
     }
-    if store && !random(g) {
-        STORE.lock().unwrap().insert(s.clone());
+    if is_store && !random(g) {
+        store.insert(s.clone());
     } else if !random(g) {
-        HEAP.lock().unwrap().insert(s.clone());
+        heap.insert(s.clone());
     }
     s
 }
 
-fn random_store(g: &mut Gen) -> Option<String> {
+fn random_store(
+    g: &mut Gen,
+    store: &mut HashSet<String>,
+    heap: &mut HashSet<String>,
+) -> Option<String> {
     if random(g) {
-        Some(arbitrary_ident(g, true))
+        Some(arbitrary_ident(g, true, store, heap))
     } else {
-        Some((*g.choose(&STORE.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
+        Some((*g.choose(&store.iter().collect::<Vec<_>>())?).to_string())
     }
 }
 
-fn random_heap(g: &mut Gen) -> Option<String> {
+fn random_heap(
+    g: &mut Gen,
+    store: &mut HashSet<String>,
+    heap: &mut HashSet<String>,
+) -> Option<String> {
     if random(g) {
-        Some(arbitrary_ident(g, true))
+        Some(arbitrary_ident(g, true, store, heap))
     } else if random(g) {
-        random_store(g)
+        random_store(g, store, heap)
     } else {
-        Some((*g.choose(&HEAP.lock().unwrap().iter().collect::<Vec<_>>())?).to_string())
+        Some((*g.choose(&heap.iter().collect::<Vec<_>>())?).to_string())
     }
 }
 
@@ -422,8 +445,8 @@ pub fn toggle_random(enable: bool) {
 }
 
 #[test]
-fn quick_check() {
-    // Check if the evaluator does not throw an error, given that the type-checker passes
+/// Check if the evaluator does not throw an error, given that the type-checker passes
+fn quick_check_typecheck_pass_implies_eval_pass() {
     toggle_random(true);
     quickcheck::QuickCheck::new()
         .min_tests_passed(500)
@@ -431,16 +454,11 @@ fn quick_check() {
         .max_tests(100000)
         .gen(Gen::new(15))
         .quickcheck(check_type_eval as fn(Statement) -> TestResult);
+}
 
-    // Check if the evaluator and type-checker do not throw errors on correct programs
-    toggle_random(false);
-    quickcheck::QuickCheck::new()
-        .tests(30000)
-        .max_tests(30000)
-        .gen(Gen::new(65))
-        .quickcheck(check_correct as fn(Statement) -> TestResult);
-
-    // Check if the type-checker *does* throw an error, given that the evaluator fails
+#[test]
+/// Check if the type-checker *does* throw an error, given that the evaluator fails
+fn quick_check_eval_fail_imples_typecheck_fail() {
     toggle_random(true);
     quickcheck::QuickCheck::new()
         .min_tests_passed(20000)
@@ -448,4 +466,15 @@ fn quick_check() {
         .max_tests(30000)
         .gen(Gen::new(65))
         .quickcheck(check_eval_type as fn(Statement) -> TestResult);
+}
+
+#[test]
+/// Check if the evaluator and type-checker do not throw errors on correct programs
+fn quick_check_typecheck_eval_pass() {
+    toggle_random(false);
+    quickcheck::QuickCheck::new()
+        .tests(30000)
+        .max_tests(30000)
+        .gen(Gen::new(65))
+        .quickcheck(check_correct as fn(Statement) -> TestResult);
 }
