@@ -445,8 +445,8 @@ pub fn toggle_random(enable: bool) {
 }
 
 #[test]
-/// Check if the evaluator does not throw an error, given that the type-checker passes
-fn quick_check_typecheck_pass_implies_eval_pass() {
+fn quick_check() {
+    // Check if the evaluator does not throw an error, given that the type-checker passes
     toggle_random(true);
     quickcheck::QuickCheck::new()
         .min_tests_passed(500)
@@ -454,11 +454,7 @@ fn quick_check_typecheck_pass_implies_eval_pass() {
         .max_tests(100000)
         .gen(Gen::new(15))
         .quickcheck(check_type_eval as fn(Statement) -> TestResult);
-}
-
-#[test]
-/// Check if the type-checker *does* throw an error, given that the evaluator fails
-fn quick_check_eval_fail_imples_typecheck_fail() {
+    // Check if the type-checker *does* throw an error, given that the evaluator fails
     toggle_random(true);
     quickcheck::QuickCheck::new()
         .min_tests_passed(20000)
@@ -466,11 +462,7 @@ fn quick_check_eval_fail_imples_typecheck_fail() {
         .max_tests(30000)
         .gen(Gen::new(65))
         .quickcheck(check_eval_type as fn(Statement) -> TestResult);
-}
-
-#[test]
-/// Check if the evaluator and type-checker do not throw errors on correct programs
-fn quick_check_typecheck_eval_pass() {
+    // Check if the evaluator and type-checker do not throw errors on correct programs
     toggle_random(false);
     quickcheck::QuickCheck::new()
         .tests(30000)
