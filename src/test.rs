@@ -371,7 +371,8 @@ fn random_heap(
 
 // Determines how likely it is to generate a faulty program (needs to be a very tiny number)
 fn random(g: &mut Gen) -> bool {
-    *TOGGLE_RANDOM.lock().unwrap() && u64::arbitrary(g) % 1_000_000_000 == 0
+    // This cannot be 0 or 1 as it is weighted more towards those values
+    *TOGGLE_RANDOM.lock().unwrap() && u8::arbitrary(g) % 100 == 2
 }
 
 /// Ensures when the typechecker passes, the program also passes
