@@ -52,9 +52,9 @@ fn typecheck_expr_aux(sigma: &HashMap<String, Type>, ast: &Expr) -> Result<Type,
             Ok(Type::Number)
         }
         Expr::Constant(Constant::Nat(_)) => Ok(Type::Number),
-        Expr::Constant(Constant::Bool(_)) => Ok(Type::Number),
+        Expr::Constant(Constant::Bool(_)) => Ok(Type::Boolean),
         Expr::NatAdd(a, b) => {
-            expect_expr_ty(Type::Number, a, sigma)?;
+            expect_expr_ty(Type::Number, a, sigma);
             expect_expr_ty(Type::Number, b, sigma)
         }
         Expr::NatLeq(a, b) => {

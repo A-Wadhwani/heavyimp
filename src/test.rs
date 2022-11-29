@@ -6,7 +6,7 @@ use crate::{
     syntax::{Constant, Constant::*, Expr, Statement},
     typechecker::typecheck,
 };
-use quickcheck::{empty_shrinker, Arbitrary, Gen, TestResult};
+use quickcheck::{empty_shrinker, single_shrinker, Arbitrary, Gen, TestResult};
 
 // Quick Checking for the Evaluator
 
@@ -85,9 +85,13 @@ impl Expr {
         if random(g, rand) {
             return Self::arbitrary_heap(g, s, store, heap, rand);
         }
-        store.remove(s);
+        if !random(g, rand) {
+            store.remove(s);
+        }
         let res = Self::arbitrary_nat(g, store, heap, rand);
-        store.insert(s.clone());
+        if !random(g, rand) {
+            store.insert(s.clone());
+        }
         res
     }
 
@@ -101,31 +105,37 @@ impl Expr {
         if random(g, rand) {
             return Self::arbitrary_heap(g, s, store, heap, rand);
         }
-        heap.remove(s);
+        if !random(g, rand) {
+            heap.remove(s);
+        }
         let res = Self::arbitrary_nat(g, store, heap, rand);
-        heap.insert(s.clone());
+        if !random(g, rand) {
+            heap.insert(s.clone());
+        }
         res
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         match self {
-            Self::StoreRead(_) => empty_shrinker(),
-            Self::HeapRead(_) => empty_shrinker(),
+            Self::StoreRead(_) => Self::Constant(Nat(0)).shrink(),
+            Self::HeapRead(_) => Self::Constant(Nat(0)).shrink(),
             Self::Constant(c) => Box::new(c.shrink().map(Self::Constant)),
             Self::NatAdd(e1, e2) => {
                 let mut shrinks = Vec::new();
+                shrinks.push(Self::Constant(Nat(0)));
                 for e1 in e1.shrink() {
-                    shrinks.push(Self::NatAdd(Box::new(e1), e2.clone()));
+                    for e2 in e2.shrink() {
+                        shrinks.push(Self::NatAdd(Box::new(e1.clone()), Box::new(e2)));
+                    }
                 }
-                for e2 in e2.shrink() {
-                    shrinks.push(Self::NatAdd(e1.clone(), Box::new(e2)));
-                }
-                shrinks.push(*e1.clone());
-                shrinks.push(*e2.clone());
+                shrinks.append(&mut e1.shrink().collect());
+                shrinks.append(&mut e2.shrink().collect());
                 Box::new(shrinks.into_iter())
             }
             Self::NatLeq(e1, e2) => {
                 let mut shrinks = Vec::new();
+                shrinks.push(Self::Constant(Bool(true)));
+                shrinks.push(Self::Constant(Bool(false)));
                 for e1 in e1.shrink() {
                     shrinks.push(Self::NatLeq(Box::new(e1), e2.clone()));
                 }
@@ -136,18 +146,19 @@ impl Expr {
             }
             Self::BoolAnd(e1, e2) => {
                 let mut shrinks = Vec::new();
+                shrinks.push(Self::Constant(Bool(true)));
+                shrinks.push(Self::Constant(Bool(false)));
                 for e1 in e1.shrink() {
-                    shrinks.push(Self::BoolAnd(Box::new(e1), e2.clone()));
+                    for e2 in e2.shrink() {
+                        shrinks.push(Self::BoolAnd(Box::new(e1.clone()), Box::new(e2)));
+                    }
                 }
-                for e2 in e2.shrink() {
-                    shrinks.push(Self::BoolAnd(e1.clone(), Box::new(e2)));
-                }
-                shrinks.push(*e1.clone());
-                shrinks.push(*e2.clone());
                 Box::new(shrinks.into_iter())
             }
             Self::BoolNot(e1) => {
                 let mut shrinks = Vec::new();
+                shrinks.push(Self::Constant(Bool(true)));
+                shrinks.push(Self::Constant(Bool(false)));
                 for e1 in e1.shrink() {
                     shrinks.push(Self::BoolNot(Box::new(e1)));
                 }
@@ -174,7 +185,7 @@ impl Arbitrary for Statement {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        match self {
+        let mut result: Vec<Self> = match self {
             Self::StoreAssign(id, expr) => {
                 let mut shrinks = Vec::new();
                 for expr in expr.shrink() {
@@ -191,51 +202,49 @@ impl Arbitrary for Statement {
             }
             Self::HeapUpdate(id, expr) => {
                 let mut shrinks = Vec::new();
+                shrinks.push(Self::Skip);
                 for expr in expr.shrink() {
                     shrinks.push(Self::HeapUpdate(id.clone(), expr));
                 }
                 Box::new(shrinks.into_iter())
             }
-            Self::HeapAlias(_, _) => empty_shrinker(),
+            Self::HeapAlias(_, _) => single_shrinker(Self::Skip),
             Self::Sequence(e1, e2) => {
                 let mut shrinks = Vec::new();
-                for e1 in e1.shrink() {
-                    shrinks.push(*e1);
-                }
+                shrinks.append(&mut e1.shrink().map(|f| *f).collect());
                 for e2 in e2.shrink() {
                     shrinks.push(Self::Sequence(e1.clone(), e2));
                 }
-                shrinks.push(*e1.clone());
                 Box::new(shrinks.into_iter())
             }
             Self::Conditional(expr, then_e, else_e) => {
                 let mut shrinks = Vec::new();
-                for expr in expr.shrink() {
-                    shrinks.push(Self::Conditional(expr, then_e.clone(), else_e.clone()));
-                }
-                for then_e in then_e.shrink() {
-                    shrinks.push(Self::Conditional(expr.clone(), then_e, else_e.clone()));
-                }
-                for else_e in else_e.shrink() {
-                    shrinks.push(Self::Conditional(expr.clone(), then_e.clone(), else_e));
-                }
                 shrinks.push(*then_e.clone());
                 shrinks.push(*else_e.clone());
+                for expr in expr.shrink() {
+                    for then_e in then_e.shrink() {
+                        for else_e in else_e.shrink() {
+                            shrinks.push(Self::Conditional(expr.clone(), then_e.clone(), else_e));
+                        }
+                    }
+                }
                 Box::new(shrinks.into_iter())
             }
             Self::While(expr, do_e) => {
-                let mut shrinks = Vec::new();
+                let mut shrinks: Vec<Statement> = Vec::new();
+                shrinks.append(&mut do_e.shrink().map(|f| *f).collect());
                 for expr in expr.shrink() {
-                    shrinks.push(Self::While(expr, do_e.clone()));
+                    for do_e in do_e.shrink() {
+                        shrinks.push(Self::While(expr.clone(), do_e));
+                    }
                 }
-                for do_e in do_e.shrink() {
-                    shrinks.push(Self::While(expr.clone(), do_e));
-                }
-                shrinks.push(*do_e.clone());
                 Box::new(shrinks.into_iter())
             }
             Self::Skip => empty_shrinker(),
         }
+        .collect();
+        result.sort_by(|a, b| a.size().cmp(&b.size()));
+        Box::new(result.into_iter())
     }
 }
 
@@ -279,16 +288,22 @@ impl Statement {
                 let sets = (store.clone(), heap.clone());
                 let cond = Expr::arbitrary_bool(g, store, heap, rand);
                 let then_e = Self::generate_stmnts(g, store, heap, rand);
-                (*store, *heap) = sets.clone();
+                if !random(g, rand) {
+                    (*store, *heap) = sets.clone();
+                }
                 let else_e = Self::generate_stmnts(g, store, heap, rand);
-                (*store, *heap) = sets;
+                if !random(g, rand) {
+                    (*store, *heap) = sets.clone();
+                }
                 Self::Conditional(cond, Box::new(then_e), Box::new(else_e))
             }
             91..=100 => {
                 let sets = (store.clone(), heap.clone());
                 let cond = Expr::arbitrary_bool(g, store, heap, rand);
                 let do_e = Self::generate_stmnts(g, store, heap, rand);
-                (*store, *heap) = sets;
+                if !random(g, rand) {
+                    (*store, *heap) = sets.clone();
+                }
                 Self::While(cond, Box::new(do_e))
             }
             _ => Self::Skip,
@@ -325,7 +340,7 @@ fn arbitrary_ident(
             .unwrap_or_else(|| arbitrary_ident(g, is_store, store, heap, rand));
     }
     if random(g, rand) {
-        return random_heap(g, store, heap, rand)
+        return random_store(g, store, heap, rand)
             .unwrap_or_else(|| arbitrary_ident(g, is_store, store, heap, rand));
     }
 
@@ -490,13 +505,13 @@ fn quick_check_pass_type_implies_pass_eval() {
         .min_tests_passed(20000)
         .tests(50000)
         .max_tests(50000)
-        .gen(Gen::new(40))
+        .gen(Gen::new(35))
         .quickcheck(check_type_eval as fn(Statement) -> TestResult);
     println!("Passed typecheck pass -> eval pass");
 }
 
 #[test]
-fn quick_check_fail_eval_implies_pass_type() {
+fn quick_check_fail_eval_implies_fail_type() {
     // Check if the type-checker *does* throw an error, given that the evaluator fails
     quickcheck::QuickCheck::new()
         .min_tests_passed(20000)
