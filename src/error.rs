@@ -19,5 +19,5 @@ pub enum TypeError {
 
 #[derive(Debug)]
 pub enum ImpParseError {
-    Other,
+    Other(String),
 }

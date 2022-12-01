@@ -24,7 +24,8 @@ lazy_static! {
 }
 
 pub fn parse(source: &str) -> Result<Statement, ImpParseError> {
-    let pairs = ImpParser::parse(Rule::program, source).map_err(|_| ImpParseError::Other)?;
+    let pairs =
+        ImpParser::parse(Rule::program, source).map_err(|e| ImpParseError::Other(e.to_string()))?;
     let statements = pairs.filter_map(|pair| match pair.as_rule() {
         Rule::EOI => None,
         _ => Some(build_stmnt(pair)),
@@ -110,6 +111,7 @@ pub fn build_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
             .map_infix(|lhs, op, rhs| match op.as_rule() {
                 Rule::add => Expr::NatAdd(Box::new(lhs), Box::new(rhs)),
                 Rule::less => Expr::NatLeq(Box::new(lhs), Box::new(rhs)),
+                Rule::and => Expr::BoolAnd(Box::new(lhs), Box::new(rhs)),
                 _ => unreachable!(),
             })
             .parse(pair.into_inner()),

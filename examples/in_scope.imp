@@ -1,0 +1,7 @@
+let z <- 10
+if *z < 10 then
+    let x <- 5
+else
+    let x <- 10
+fi
+let y <- *x

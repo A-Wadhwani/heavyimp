@@ -54,7 +54,7 @@ fn typecheck_expr_aux(sigma: &HashMap<String, Type>, ast: &Expr) -> Result<Type,
         Expr::Constant(Constant::Nat(_)) => Ok(Type::Number),
         Expr::Constant(Constant::Bool(_)) => Ok(Type::Boolean),
         Expr::NatAdd(a, b) => {
-            expect_expr_ty(Type::Number, a, sigma);
+            expect_expr_ty(Type::Number, a, sigma)?;
             expect_expr_ty(Type::Number, b, sigma)
         }
         Expr::NatLeq(a, b) => {
@@ -116,7 +116,22 @@ fn typecheck_stmt_aux(sigma: &mut HashMap<String, Type>, ast: &Statement) -> Res
             let mut then_sigma = sigma.clone();
             let mut els_sigma = sigma.clone();
             typecheck_stmt_aux(&mut then_sigma, then)?;
-            typecheck_stmt_aux(&mut els_sigma, els)
+            typecheck_stmt_aux(&mut els_sigma, els)?;
+            *sigma = then_sigma
+                .into_iter()
+                .filter_map(|(k, v1)| {
+                    if let Some(v2) = els_sigma.get(&k) {
+                        if &v1 == v2 {
+                            Some((k, *v2))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            Ok(())
         }
         Statement::While(cond, luup) => {
             expect_expr_ty(Type::Boolean, cond, sigma)?;

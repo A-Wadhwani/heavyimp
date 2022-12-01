@@ -1,5 +1,5 @@
 WHITESPACE = _{ " " | "\t" }
-COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
+COMMENT = _{ "#" ~ (!newline ~ ANY)* }
 
 boolean = @{ "true" | "false" }
 number = @{ ASCII_DIGIT+ }
@@ -9,18 +9,20 @@ deref_ident = @{ "*" ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 add = { "+" }
 less = { "<" }
 not = { "~" }
-binary_operator = _{ add | less }
+and = { "&" }
+binary_operator = _{ add | less | and }
 unary_operator = _{ not }
 term = _{ number | boolean | deref_ident | ident }
 compound_expr = { unary_operator* ~ term ~ (binary_operator ~ unary_operator* ~ term)* }
 expr = { compound_expr | term }
+newline = _{ "\r" ~ "\n" | "\n" }
 
 store_assign = { "let" ~ ident ~ "=" ~ expr }
 heap_new = { "let" ~ ident ~ "<-" ~ expr }
 heap_update = { ident ~ "<-" ~ expr }
 heap_alias = { ident ~ "=" ~ ident }
-conditional = { "if" ~ expr ~ "then" ~ "\n" ~ stmnt ~ "\n" ~ "else" ~ "\n" ~ stmnt ~ "\n" ~ "fi" }
-while_loop = { "while" ~ expr ~ "do" ~ "\n" ~ stmnt ~ "\n" ~ "end" }
+conditional = { "if" ~ expr ~ "then" ~ newline ~ stmnt ~ newline ~ "else" ~ newline ~ stmnt ~ newline ~ "fi" }
+while_loop = { "while" ~ expr ~ "do" ~ newline ~ stmnt ~ newline ~ "end" }
 skip = { "skip" }
 stmnt = _{ store_assign
          | heap_new
@@ -30,4 +32,4 @@ stmnt = _{ store_assign
          | while_loop
          | skip }
 
-program = _{ SOI ~ "\n"* ~ stmnt ~ ("\n"* ~ stmnt)* ~ "\n"* ~ EOI }
+program = _{ SOI ~ newline* ~ stmnt ~ (newline+ ~ stmnt)* ~ newline* ~ EOI }

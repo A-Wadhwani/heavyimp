@@ -1,3 +1,5 @@
+use crate::error::ImpParseError;
+
 pub mod error;
 pub mod evaluator;
 pub mod parser;
@@ -17,7 +19,11 @@ fn main() {
 }
 
 fn run_str(source: &str) {
-    let parsed = parser::parse(&source).unwrap();
+    let parsed = parser::parse(&source).unwrap_or_else(|e| {
+        let ImpParseError::Other(s) = e;
+        eprintln!("Parser Error:\n{}", s);
+        std::process::exit(1);
+    });
     dbg!(&parsed);
 
     let typecheck = typechecker::typecheck(&parsed);
