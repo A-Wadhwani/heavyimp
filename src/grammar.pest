@@ -21,8 +21,8 @@ store_assign = { "let" ~ ident ~ "=" ~ expr }
 heap_new = { "let" ~ ident ~ "<-" ~ expr }
 heap_update = { ident ~ "<-" ~ expr }
 heap_alias = { ident ~ "=" ~ ident }
-conditional = { "if" ~ expr ~ "then" ~ newline ~ stmnt ~ newline ~ "else" ~ newline ~ stmnt ~ newline ~ "fi" }
-while_loop = { "while" ~ expr ~ "do" ~ newline ~ stmnt ~ newline ~ "end" }
+conditional = { "if" ~ expr ~ "then" ~ newline ~ block ~ "else" ~ newline ~ block ~ "fi" }
+while_loop = { "while" ~ expr ~ "do" ~ newline ~ block ~ "end" }
 skip = { "skip" }
 stmnt = _{ store_assign
          | heap_new
@@ -32,4 +32,5 @@ stmnt = _{ store_assign
          | while_loop
          | skip }
 
-program = _{ SOI ~ newline* ~ stmnt ~ (newline+ ~ stmnt)* ~ newline* ~ EOI }
+block = { newline* ~ (stmnt ~ (newline+ ~ stmnt)*)? ~ newline* }
+program = _{ SOI ~ block ~ EOI }

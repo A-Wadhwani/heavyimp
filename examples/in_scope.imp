@@ -1,7 +1,13 @@
 let z <- 10
 if *z < 10 then
     let x <- 5
+    let a = 1
+    let b <- 1
+    let c = 5
 else
     let x <- 10
+    let b = 1
+    let a <- 1
+    let c = 6
 fi
 let y <- *x

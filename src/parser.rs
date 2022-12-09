@@ -26,6 +26,7 @@ lazy_static! {
 pub fn parse(source: &str) -> Result<Statement, ImpParseError> {
     let pairs =
         ImpParser::parse(Rule::program, source).map_err(|e| ImpParseError::Other(e.to_string()))?;
+    
     let statements = pairs.filter_map(|pair| match pair.as_rule() {
         Rule::EOI => None,
         _ => Some(build_stmnt(pair)),
@@ -83,6 +84,17 @@ pub fn build_stmnt(pair: pest::iterators::Pair<Rule>) -> Statement {
             let body_stmnt = build_stmnt(body_stmnt_pair);
             Statement::While(cond_expr, Box::new(body_stmnt))
         }
+        Rule::block => {
+            let pairs = pair.into_inner();
+            let statements = pairs.filter_map(|pair| match pair.as_rule() {
+                Rule::EOI => None,
+                _ => Some(build_stmnt(pair)),
+            });
+
+            statements.fold(Statement::Skip, |acc, next| {
+                Statement::Sequence(Box::new(acc), Box::new(next))
+            })
+        }
         Rule::skip => Statement::Skip,
         _ => panic!("{:?}", pair.as_rule()),
     }
@@ -108,13 +120,13 @@ pub fn build_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
                 Rule::not => Expr::BoolNot(Box::new(rhs)),
                 _ => unreachable!(),
             })
-            .map_infix(|lhs, op, rhs| match op.as_rule() {
-                Rule::add => Expr::NatAdd(Box::new(lhs), Box::new(rhs)),
-                Rule::less => Expr::NatLeq(Box::new(lhs), Box::new(rhs)),
-                Rule::and => Expr::BoolAnd(Box::new(lhs), Box::new(rhs)),
-                _ => unreachable!(),
-            })
-            .parse(pair.into_inner()),
+        .map_infix(|lhs, op, rhs| match op.as_rule() {
+            Rule::add => Expr::NatAdd(Box::new(lhs), Box::new(rhs)),
+            Rule::less => Expr::NatLeq(Box::new(lhs), Box::new(rhs)),
+            Rule::and => Expr::BoolAnd(Box::new(lhs), Box::new(rhs)),
+            _ => unreachable!(),
+        })
+        .parse(pair.into_inner()),
         _ => panic!("{:?}", pair.as_rule()),
     }
 }
@@ -142,8 +154,8 @@ mod test {
         let s = "~5 + *x + true";
         let ex = NatAdd(
             Box::new(NatAdd(
-                Box::new(BoolNot(Box::new(Constant(Nat(5))))),
-                Box::new(HeapRead("x".to_string())),
+                    Box::new(BoolNot(Box::new(Constant(Nat(5))))),
+                    Box::new(HeapRead("x".to_string())),
             )),
             Box::new(Constant(Bool(true))),
         );
@@ -158,26 +170,26 @@ mod test {
 
         let stmt = Sequence(
             Box::new(Sequence(
-                Box::new(Sequence(
-                    Box::new(Skip),
-                    Box::new(HeapNew("x".to_string(), Constant(Nat(0)))),
-                )),
-                Box::new(StoreAssign("inc".to_string(), Constant(Nat(25)))),
+                    Box::new(Sequence(
+                            Box::new(Skip),
+                            Box::new(HeapNew("x".to_string(), Constant(Nat(0)))),
+                    )),
+                    Box::new(StoreAssign("inc".to_string(), Constant(Nat(25)))),
             )),
             Box::new(While(
-                NatLeq(
-                    Box::new(HeapRead("x".to_string())),
-                    Box::new(Constant(Nat(100))),
-                ),
-                Box::new(HeapUpdate(
-                    "x".to_string(),
-                    NatAdd(
+                    NatLeq(
                         Box::new(HeapRead("x".to_string())),
-                        Box::new(StoreRead("inc".to_string())),
+                        Box::new(Constant(Nat(100))),
                     ),
-                )),
+                    Box::new(HeapUpdate(
+                            "x".to_string(),
+                            NatAdd(
+                                Box::new(HeapRead("x".to_string())),
+                                Box::new(StoreRead("inc".to_string())),
+                            ),
+                    )),
             )),
-        );
+            );
 
         assert_eq!(parsed, stmt);
     }

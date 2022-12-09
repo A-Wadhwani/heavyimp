@@ -24,11 +24,18 @@ fn run_str(source: &str) {
         eprintln!("Parser Error:\n{}", s);
         std::process::exit(1);
     });
-    dbg!(&parsed);
+
+    println!("Parsed");
+    println!("===============");
+    println!("{:?}", &parsed);
 
     let typecheck = typechecker::typecheck(&parsed);
     match typecheck {
-        Ok(_) => println!("{:?}", evaluator::eval_program(&parsed)),
+        Ok(_) => {
+            println!("\nEvaluated");
+            println!("===============");
+            println!("{:?}", evaluator::eval_program(&parsed))
+        }
         Err(e) => eprintln!("Error: {:?}", e),
     }
 }
