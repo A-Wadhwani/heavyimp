@@ -14,12 +14,19 @@ end
 ## Implemented Features
 - Parser
     - Implemented with the help of pest, and using a lua-like syntax
+    - Designed such that type inference is unnecessary
+        - `let` always denotes a new binding
+        - `=` assigns to the store
+        - `<-` assigns to the heap
+        - `*` reads from the heap. No pointer arithmetic is allowed, so it must always come before an identifier.
 - Typechecker
     - Refer to `typing_rules.pdf`
 - Interpreter
     - Produces a map from variables to values or locations on the heap, and an array of values on the heap.
     - To avoid infinite loops during quickcheck tests, the interpreter has a maximum number of iterations in a loop it can execute.
 - Quickcheck tests
+    - We have control over how many of the generated programs will be correct by first
+    generating correct programs and then randomly messing with them.
     - Randomly generates programs, and checks that they typecheck and evaluate correctly.
 
 ## Important Note About Typing Rules
