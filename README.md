@@ -22,6 +22,35 @@ end
 - Quickcheck tests
     - Randomly generates programs, and checks that they typecheck and evaluate correctly.
 
+## Important Note About Typing Rules
+
+Conditionals allow variables from either conditional branch to leak if they have the same
+type in each branch. The intersection sign in T-Conditional denotes variables that have the
+same type in each scope.
+
+The behavior for this example is interesting because of this:
+
+```
+let z <- 10
+if *z < 10 then
+    let x <- 5
+    let a = 1
+    let b <- 1
+else
+    let x <- 10
+    let b = 1
+    let a <- 1
+fi
+let y <- *x
+```
+
+Here, x has the same type in each branch, so the assignment on the last line succeeds. However,
+if we attempt to assign to either b or a we get an `UnboundVariable` error from the typechecker,
+since they have different types in each branch.
+
+The evaluator doesn't know this, so the ending scope will still contain every variable for the
+branch that was actually executed.
+
 ## Running and Testing
 You can run programs through: `cargo run examples/<file>.imp`
 
