@@ -6,8 +6,18 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "heavyimp"
+path = "src/lib.rs"
+
+
+[[bin]]
+name = "heavyimp"
+path = "src/main.rs"
+
 [dependencies]
 lazy_static = "1.4.0"
 quickcheck = "1"
 pest = "2.5.0"
 pest_derive = "2.5.0"
+wasm-bindgen = "0.2.83"
