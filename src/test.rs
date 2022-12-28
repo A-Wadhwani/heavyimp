@@ -1,4 +1,4 @@
-#![cfg(test)]
+#![cfg(all(test, not(target_family = "wasm")))]
 use std::collections::HashSet;
 
 use crate::{
