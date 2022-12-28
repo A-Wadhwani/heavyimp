@@ -16,7 +16,7 @@ pub struct Success {
 }
 
 #[wasm_bindgen]
-pub fn run_program(source: &str) -> Result<Success, String> {
+pub fn run_program(source: &str) -> Result<Success, JsValue> {
     let parsed = parser::parse(&source).unwrap_or_else(|e| {
         let ImpParseError::Other(s) = e;
         eprintln!("Parser Error:\n{}", s);
@@ -32,9 +32,9 @@ pub fn run_program(source: &str) -> Result<Success, String> {
                     parsed: format!("{:?}", parsed),
                     evaluated: format!("{:?}", e),
                 }),
-                Err(e) => Err(format!("Evaluation Error: {:?}", e)),
+                Err(e) => Err(format!("Evaluation Error: {:?}", e).as_str().into()),
             }
         }
-        Err(e) => Err(format!("Parsing Error: {:?}", e)),
+        Err(e) => Err(format!("Parsing Error: {:?}", e).as_str().into()),
     }
 }
